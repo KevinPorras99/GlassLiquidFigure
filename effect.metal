@@ -76,6 +76,14 @@ struct Uniforms {
     metal::float4 paletteStop9_;
     metal::float4 paletteStop10_;
     metal::float4 paletteStop11_;
+    metal::float4 shape;
+    metal::float4 aura;
+    metal::float4 auraColor;
+    metal::float4 auraColorB;
+    metal::float4 audioBands;
+    metal::float4 auraColorC;
+    metal::float4 auraEffect;
+    metal::float4 renderViewport;
 };
 struct MfRamp {
     float n;
@@ -116,6 +124,10 @@ float mfEdgeD(
     float soft
 ) {
     return soft - 0.005;
+}
+
+float glsRenderMinSize(constant Uniforms& u) {
+  return metal::max(metal::min(u.size.x, u.size.y) / metal::max(u.renderViewport.x, 1.0), 1.0);
 }
 
 metal::float3 mfEdgeGlow(
@@ -1224,12 +1236,62 @@ metal::float3 glsParticleRibbonFluid(
     return metal::float3(0.0);
 }
 
+// Real band energy sets vibration amplitude; silence leaves the material intact.
+float glsAudioWave(float x, float t, constant Uniforms& u) {
+  float envelope = metal::pow(metal::max(1.0 - x * x, 0.0), 0.75);
+  float bass = u.audioBands.x * 0.24 * metal::sin(x * 7.0 - t * 9.0);
+  float mids = u.audioBands.y * 0.14 * metal::sin(x * 18.0 - t * 17.0 + 0.8);
+  float treble = u.audioBands.z * 0.065 * metal::sin(x * 38.0 - t * 29.0 + 1.7);
+  return envelope * (bass + mids + treble);
+}
+
+metal::float3 glsGalaxyCoreFluid(metal::float2 p, float t, constant Uniforms& u) {
+  float r = metal::length(p);
+  float angle = metal::atan2(p.y, p.x) + r * (5.0 + u.warp) - t * 0.28;
+  metal::float2 q = glsRotate(p, -t * 0.08);
+  float dust = lqFbm(q * (4.0 + u.zoom * 3.0), 0.015).x;
+  float arm = metal::pow(0.5 + 0.5 * metal::sin(angle * 3.0 + dust * u.ridgeAmt * 3.0), 3.0);
+  float halo = metal::exp(-r * r * 3.0);
+  metal::float2 cell = q * 38.0;
+  float sparkle = metal::pow(lqHash(metal::floor(cell)), 32.0) * metal::exp(-metal::dot(metal::fract(cell) - metal::float2(0.5), metal::fract(cell) - metal::float2(0.5)) * 65.0);
+  float value = metal::clamp(arm * halo * 0.7 + dust * halo * 0.25, 0.0, 1.0);
+  metal::float3 color = lqRamp(value, u.colorA.rgb, u.colorB.rgb, u.colorC.rgb, u.colorD.rgb, u);
+  color = color + u.colorD.rgb * (metal::exp(-r * r * 90.0) * 0.65 + sparkle * (0.35 + arm));
+  return glsFinishPresetFluid(color, p, u);
+}
+
+metal::float3 glsMysticMistFluid(metal::float2 p, float t, constant Uniforms& u) {
+  metal::float2 q = p * (1.35 + u.zoom) + metal::float2(t * 0.035, -t * 0.06);
+  metal::float2 drift = lqFbm(q * 1.4, 0.025);
+  float front = lqFbm(q + (drift - metal::float2(0.5)) * u.warp * 0.5, 0.028).x;
+  float back = lqFbm(glsRotate(q, 1.2) * 1.75 + metal::float2(-t * 0.08, 2.3), 0.032).x;
+  float density = metal::smoothstep(0.22, 0.8, front * 0.65 + back * 0.35);
+  float depth = metal::sqrt(metal::max(1.0 - metal::dot(p, p), 0.0));
+  float value = metal::clamp(density * (0.55 + 0.45 * depth), 0.0, 1.0);
+  metal::float3 color = lqRamp(value, u.colorA.rgb, u.colorB.rgb, u.colorC.rgb, u.colorD.rgb, u);
+  color = color + u.highlightColor.rgb * metal::pow(density, 5.0) * u.ridgeAmt * 0.16;
+  return glsFinishPresetFluid(color, p, u);
+}
+
+metal::float3 glsCrystalLightFluid(metal::float2 p, float t, constant Uniforms& u) {
+  metal::float2 q = glsRotate(p, 0.2 * metal::sin(t * 0.12)) * (3.0 + u.zoom * 3.0);
+  float bend = lqFbm(q * 0.75 + metal::float2(t * 0.04, -t * 0.055), 0.018).x;
+  float a = metal::sin(q.x * 2.2 + q.y * 1.1 + bend * u.warp + t * 0.28);
+  float b = metal::sin(q.y * 2.4 - q.x * 0.8 - bend * u.warp + t * 0.19);
+  float caustic = metal::pow(metal::max(1.0 - metal::abs(a * b), 0.0), 9.0 + u.sharp * 2.0);
+  float value = metal::clamp(0.12 + bend * 0.34 + caustic * 0.5, 0.0, 1.0);
+  metal::float3 color = lqRamp(value, u.colorA.rgb, u.colorB.rgb, u.colorC.rgb, u.colorD.rgb, u);
+  color = color + u.highlightColor.rgb * caustic * (0.15 + u.ridgeAmt * 0.35);
+  return glsFinishPresetFluid(color, p, u);
+}
+
 metal::float3 glsPresetFluid(
-    metal::float2 p_16,
+    metal::float2 pIn,
     int style,
     float t_13,
     constant Uniforms& u
 ) {
+    metal::float2 p_16 = pIn - metal::float2(0.0, glsAudioWave(pIn.x, t_13, u));
     if (style == 9) {
         metal::float3 _e5 = glsSiriFluid(p_16, t_13, u);
         return _e5;
@@ -1274,6 +1336,9 @@ metal::float3 glsPresetFluid(
     if (style == 23) {
         return glsRefractiveBlobFluid(p_16, t_13, u);
     }
+    if (style == 25) { return glsGalaxyCoreFluid(p_16, t_13, u); }
+    if (style == 26) { return glsMysticMistFluid(p_16, t_13, u); }
+    if (style == 27) { return glsCrystalLightFluid(p_16, t_13, u); }
     if (style == 24) {
         return glsParticleRibbonFluid(p_16, t_13, u);
     }
@@ -1464,6 +1529,427 @@ float glsContourScale(
     return 1.0 + ((metal::clamp(amount, 0.0, 1.0) * _e13) * _e9.x);
 }
 
+// Smooth intersections keep a small bevel at polygon corners.
+float glsBevelMax(float a, float b) {
+  float h = metal::max(0.025 - metal::abs(a - b), 0.0) / 0.025;
+  return metal::max(a, b) + h * h * 0.00625;
+}
+
+float glsSacredSegment(metal::float2 p, float ax, float ay, float bx, float by) {
+  float dx = bx - ax;
+  float dy = by - ay;
+  float h = metal::clamp(((p.x - ax) * dx + (p.y - ay) * dy) / metal::max(dx * dx + dy * dy, 0.00001), 0.0, 1.0);
+  float x = p.x - ax - dx * h;
+  float y = p.y - ay - dy * h;
+  return metal::sqrt(x * x + y * y);
+}
+
+float glsSacredDistance(metal::float2 p, constant Uniforms& u) {
+  float distance = 10.0;
+  if (u.shape.x > 7.5 && u.shape.x < 8.5) {
+    distance = metal::min(distance, metal::abs(metal::sqrt((p.x - -0.500000000) * (p.x - -0.500000000) + (p.y - 0.000000000) * (p.y - 0.000000000)) - 0.250000000));
+    distance = metal::min(distance, metal::abs(metal::sqrt((p.x - -0.375000000) * (p.x - -0.375000000) + (p.y - 0.216506351) * (p.y - 0.216506351)) - 0.250000000));
+    distance = metal::min(distance, metal::abs(metal::sqrt((p.x - -0.250000000) * (p.x - -0.250000000) + (p.y - 0.433012702) * (p.y - 0.433012702)) - 0.250000000));
+    distance = metal::min(distance, metal::abs(metal::sqrt((p.x - -0.375000000) * (p.x - -0.375000000) + (p.y - -0.216506351) * (p.y - -0.216506351)) - 0.250000000));
+    distance = metal::min(distance, metal::abs(metal::sqrt((p.x - -0.250000000) * (p.x - -0.250000000) + (p.y - 0.000000000) * (p.y - 0.000000000)) - 0.250000000));
+    distance = metal::min(distance, metal::abs(metal::sqrt((p.x - -0.125000000) * (p.x - -0.125000000) + (p.y - 0.216506351) * (p.y - 0.216506351)) - 0.250000000));
+    distance = metal::min(distance, metal::abs(metal::sqrt((p.x - 0.000000000) * (p.x - 0.000000000) + (p.y - 0.433012702) * (p.y - 0.433012702)) - 0.250000000));
+    distance = metal::min(distance, metal::abs(metal::sqrt((p.x - -0.250000000) * (p.x - -0.250000000) + (p.y - -0.433012702) * (p.y - -0.433012702)) - 0.250000000));
+    distance = metal::min(distance, metal::abs(metal::sqrt((p.x - -0.125000000) * (p.x - -0.125000000) + (p.y - -0.216506351) * (p.y - -0.216506351)) - 0.250000000));
+    distance = metal::min(distance, metal::abs(metal::sqrt((p.x - 0.000000000) * (p.x - 0.000000000) + (p.y - 0.000000000) * (p.y - 0.000000000)) - 0.250000000));
+    distance = metal::min(distance, metal::abs(metal::sqrt((p.x - 0.125000000) * (p.x - 0.125000000) + (p.y - 0.216506351) * (p.y - 0.216506351)) - 0.250000000));
+    distance = metal::min(distance, metal::abs(metal::sqrt((p.x - 0.250000000) * (p.x - 0.250000000) + (p.y - 0.433012702) * (p.y - 0.433012702)) - 0.250000000));
+    distance = metal::min(distance, metal::abs(metal::sqrt((p.x - 0.000000000) * (p.x - 0.000000000) + (p.y - -0.433012702) * (p.y - -0.433012702)) - 0.250000000));
+    distance = metal::min(distance, metal::abs(metal::sqrt((p.x - 0.125000000) * (p.x - 0.125000000) + (p.y - -0.216506351) * (p.y - -0.216506351)) - 0.250000000));
+    distance = metal::min(distance, metal::abs(metal::sqrt((p.x - 0.250000000) * (p.x - 0.250000000) + (p.y - 0.000000000) * (p.y - 0.000000000)) - 0.250000000));
+    distance = metal::min(distance, metal::abs(metal::sqrt((p.x - 0.375000000) * (p.x - 0.375000000) + (p.y - 0.216506351) * (p.y - 0.216506351)) - 0.250000000));
+    distance = metal::min(distance, metal::abs(metal::sqrt((p.x - 0.250000000) * (p.x - 0.250000000) + (p.y - -0.433012702) * (p.y - -0.433012702)) - 0.250000000));
+    distance = metal::min(distance, metal::abs(metal::sqrt((p.x - 0.375000000) * (p.x - 0.375000000) + (p.y - -0.216506351) * (p.y - -0.216506351)) - 0.250000000));
+    distance = metal::min(distance, metal::abs(metal::sqrt((p.x - 0.500000000) * (p.x - 0.500000000) + (p.y - 0.000000000) * (p.y - 0.000000000)) - 0.250000000));
+  }
+  if (u.shape.x > 8.5 && u.shape.x < 9.5) {
+    distance = metal::min(distance, metal::abs(metal::sqrt((p.x - 0.000000000) * (p.x - 0.000000000) + (p.y - 0.000000000) * (p.y - 0.000000000)) - 0.360000000));
+    distance = metal::min(distance, metal::abs(metal::sqrt((p.x - 0.360000000) * (p.x - 0.360000000) + (p.y - 0.000000000) * (p.y - 0.000000000)) - 0.360000000));
+    distance = metal::min(distance, metal::abs(metal::sqrt((p.x - 0.180000000) * (p.x - 0.180000000) + (p.y - 0.311769145) * (p.y - 0.311769145)) - 0.360000000));
+    distance = metal::min(distance, metal::abs(metal::sqrt((p.x - -0.180000000) * (p.x - -0.180000000) + (p.y - 0.311769145) * (p.y - 0.311769145)) - 0.360000000));
+    distance = metal::min(distance, metal::abs(metal::sqrt((p.x - -0.360000000) * (p.x - -0.360000000) + (p.y - 0.000000000) * (p.y - 0.000000000)) - 0.360000000));
+    distance = metal::min(distance, metal::abs(metal::sqrt((p.x - -0.180000000) * (p.x - -0.180000000) + (p.y - -0.311769145) * (p.y - -0.311769145)) - 0.360000000));
+    distance = metal::min(distance, metal::abs(metal::sqrt((p.x - 0.180000000) * (p.x - 0.180000000) + (p.y - -0.311769145) * (p.y - -0.311769145)) - 0.360000000));
+  }
+  if (u.shape.x > 10.5 && u.shape.x < 11.5) {
+    distance = metal::min(distance, metal::abs(metal::sqrt((p.x - 0.000000000) * (p.x - 0.000000000) + (p.y - 0.000000000) * (p.y - 0.000000000)) - 0.160000000));
+    distance = metal::min(distance, metal::abs(metal::sqrt((p.x - 0.320000000) * (p.x - 0.320000000) + (p.y - 0.000000000) * (p.y - 0.000000000)) - 0.160000000));
+    distance = metal::min(distance, metal::abs(metal::sqrt((p.x - 0.160000000) * (p.x - 0.160000000) + (p.y - 0.277128129) * (p.y - 0.277128129)) - 0.160000000));
+    distance = metal::min(distance, metal::abs(metal::sqrt((p.x - -0.160000000) * (p.x - -0.160000000) + (p.y - 0.277128129) * (p.y - 0.277128129)) - 0.160000000));
+    distance = metal::min(distance, metal::abs(metal::sqrt((p.x - -0.320000000) * (p.x - -0.320000000) + (p.y - 0.000000000) * (p.y - 0.000000000)) - 0.160000000));
+    distance = metal::min(distance, metal::abs(metal::sqrt((p.x - -0.160000000) * (p.x - -0.160000000) + (p.y - -0.277128129) * (p.y - -0.277128129)) - 0.160000000));
+    distance = metal::min(distance, metal::abs(metal::sqrt((p.x - 0.160000000) * (p.x - 0.160000000) + (p.y - -0.277128129) * (p.y - -0.277128129)) - 0.160000000));
+    distance = metal::min(distance, metal::abs(metal::sqrt((p.x - 0.640000000) * (p.x - 0.640000000) + (p.y - 0.000000000) * (p.y - 0.000000000)) - 0.160000000));
+    distance = metal::min(distance, metal::abs(metal::sqrt((p.x - 0.320000000) * (p.x - 0.320000000) + (p.y - 0.554256258) * (p.y - 0.554256258)) - 0.160000000));
+    distance = metal::min(distance, metal::abs(metal::sqrt((p.x - -0.320000000) * (p.x - -0.320000000) + (p.y - 0.554256258) * (p.y - 0.554256258)) - 0.160000000));
+    distance = metal::min(distance, metal::abs(metal::sqrt((p.x - -0.640000000) * (p.x - -0.640000000) + (p.y - 0.000000000) * (p.y - 0.000000000)) - 0.160000000));
+    distance = metal::min(distance, metal::abs(metal::sqrt((p.x - -0.320000000) * (p.x - -0.320000000) + (p.y - -0.554256258) * (p.y - -0.554256258)) - 0.160000000));
+    distance = metal::min(distance, metal::abs(metal::sqrt((p.x - 0.320000000) * (p.x - 0.320000000) + (p.y - -0.554256258) * (p.y - -0.554256258)) - 0.160000000));
+    distance = metal::min(distance, glsSacredSegment(p, 0.000000000, 0.000000000, 0.320000000, 0.000000000));
+    distance = metal::min(distance, glsSacredSegment(p, 0.000000000, 0.000000000, 0.160000000, 0.277128129));
+    distance = metal::min(distance, glsSacredSegment(p, 0.000000000, 0.000000000, -0.160000000, 0.277128129));
+    distance = metal::min(distance, glsSacredSegment(p, 0.000000000, 0.000000000, -0.320000000, 0.000000000));
+    distance = metal::min(distance, glsSacredSegment(p, 0.000000000, 0.000000000, -0.160000000, -0.277128129));
+    distance = metal::min(distance, glsSacredSegment(p, 0.000000000, 0.000000000, 0.160000000, -0.277128129));
+    distance = metal::min(distance, glsSacredSegment(p, 0.000000000, 0.000000000, 0.640000000, 0.000000000));
+    distance = metal::min(distance, glsSacredSegment(p, 0.000000000, 0.000000000, 0.320000000, 0.554256258));
+    distance = metal::min(distance, glsSacredSegment(p, 0.000000000, 0.000000000, -0.320000000, 0.554256258));
+    distance = metal::min(distance, glsSacredSegment(p, 0.000000000, 0.000000000, -0.640000000, 0.000000000));
+    distance = metal::min(distance, glsSacredSegment(p, 0.000000000, 0.000000000, -0.320000000, -0.554256258));
+    distance = metal::min(distance, glsSacredSegment(p, 0.000000000, 0.000000000, 0.320000000, -0.554256258));
+    distance = metal::min(distance, glsSacredSegment(p, 0.320000000, 0.000000000, 0.160000000, 0.277128129));
+    distance = metal::min(distance, glsSacredSegment(p, 0.320000000, 0.000000000, -0.160000000, 0.277128129));
+    distance = metal::min(distance, glsSacredSegment(p, 0.320000000, 0.000000000, -0.320000000, 0.000000000));
+    distance = metal::min(distance, glsSacredSegment(p, 0.320000000, 0.000000000, -0.160000000, -0.277128129));
+    distance = metal::min(distance, glsSacredSegment(p, 0.320000000, 0.000000000, 0.160000000, -0.277128129));
+    distance = metal::min(distance, glsSacredSegment(p, 0.320000000, 0.000000000, 0.640000000, 0.000000000));
+    distance = metal::min(distance, glsSacredSegment(p, 0.320000000, 0.000000000, 0.320000000, 0.554256258));
+    distance = metal::min(distance, glsSacredSegment(p, 0.320000000, 0.000000000, -0.320000000, 0.554256258));
+    distance = metal::min(distance, glsSacredSegment(p, 0.320000000, 0.000000000, -0.640000000, 0.000000000));
+    distance = metal::min(distance, glsSacredSegment(p, 0.320000000, 0.000000000, -0.320000000, -0.554256258));
+    distance = metal::min(distance, glsSacredSegment(p, 0.320000000, 0.000000000, 0.320000000, -0.554256258));
+    distance = metal::min(distance, glsSacredSegment(p, 0.160000000, 0.277128129, -0.160000000, 0.277128129));
+    distance = metal::min(distance, glsSacredSegment(p, 0.160000000, 0.277128129, -0.320000000, 0.000000000));
+    distance = metal::min(distance, glsSacredSegment(p, 0.160000000, 0.277128129, -0.160000000, -0.277128129));
+    distance = metal::min(distance, glsSacredSegment(p, 0.160000000, 0.277128129, 0.160000000, -0.277128129));
+    distance = metal::min(distance, glsSacredSegment(p, 0.160000000, 0.277128129, 0.640000000, 0.000000000));
+    distance = metal::min(distance, glsSacredSegment(p, 0.160000000, 0.277128129, 0.320000000, 0.554256258));
+    distance = metal::min(distance, glsSacredSegment(p, 0.160000000, 0.277128129, -0.320000000, 0.554256258));
+    distance = metal::min(distance, glsSacredSegment(p, 0.160000000, 0.277128129, -0.640000000, 0.000000000));
+    distance = metal::min(distance, glsSacredSegment(p, 0.160000000, 0.277128129, -0.320000000, -0.554256258));
+    distance = metal::min(distance, glsSacredSegment(p, 0.160000000, 0.277128129, 0.320000000, -0.554256258));
+    distance = metal::min(distance, glsSacredSegment(p, -0.160000000, 0.277128129, -0.320000000, 0.000000000));
+    distance = metal::min(distance, glsSacredSegment(p, -0.160000000, 0.277128129, -0.160000000, -0.277128129));
+    distance = metal::min(distance, glsSacredSegment(p, -0.160000000, 0.277128129, 0.160000000, -0.277128129));
+    distance = metal::min(distance, glsSacredSegment(p, -0.160000000, 0.277128129, 0.640000000, 0.000000000));
+    distance = metal::min(distance, glsSacredSegment(p, -0.160000000, 0.277128129, 0.320000000, 0.554256258));
+    distance = metal::min(distance, glsSacredSegment(p, -0.160000000, 0.277128129, -0.320000000, 0.554256258));
+    distance = metal::min(distance, glsSacredSegment(p, -0.160000000, 0.277128129, -0.640000000, 0.000000000));
+    distance = metal::min(distance, glsSacredSegment(p, -0.160000000, 0.277128129, -0.320000000, -0.554256258));
+    distance = metal::min(distance, glsSacredSegment(p, -0.160000000, 0.277128129, 0.320000000, -0.554256258));
+    distance = metal::min(distance, glsSacredSegment(p, -0.320000000, 0.000000000, -0.160000000, -0.277128129));
+    distance = metal::min(distance, glsSacredSegment(p, -0.320000000, 0.000000000, 0.160000000, -0.277128129));
+    distance = metal::min(distance, glsSacredSegment(p, -0.320000000, 0.000000000, 0.640000000, 0.000000000));
+    distance = metal::min(distance, glsSacredSegment(p, -0.320000000, 0.000000000, 0.320000000, 0.554256258));
+    distance = metal::min(distance, glsSacredSegment(p, -0.320000000, 0.000000000, -0.320000000, 0.554256258));
+    distance = metal::min(distance, glsSacredSegment(p, -0.320000000, 0.000000000, -0.640000000, 0.000000000));
+    distance = metal::min(distance, glsSacredSegment(p, -0.320000000, 0.000000000, -0.320000000, -0.554256258));
+    distance = metal::min(distance, glsSacredSegment(p, -0.320000000, 0.000000000, 0.320000000, -0.554256258));
+    distance = metal::min(distance, glsSacredSegment(p, -0.160000000, -0.277128129, 0.160000000, -0.277128129));
+    distance = metal::min(distance, glsSacredSegment(p, -0.160000000, -0.277128129, 0.640000000, 0.000000000));
+    distance = metal::min(distance, glsSacredSegment(p, -0.160000000, -0.277128129, 0.320000000, 0.554256258));
+    distance = metal::min(distance, glsSacredSegment(p, -0.160000000, -0.277128129, -0.320000000, 0.554256258));
+    distance = metal::min(distance, glsSacredSegment(p, -0.160000000, -0.277128129, -0.640000000, 0.000000000));
+    distance = metal::min(distance, glsSacredSegment(p, -0.160000000, -0.277128129, -0.320000000, -0.554256258));
+    distance = metal::min(distance, glsSacredSegment(p, -0.160000000, -0.277128129, 0.320000000, -0.554256258));
+    distance = metal::min(distance, glsSacredSegment(p, 0.160000000, -0.277128129, 0.640000000, 0.000000000));
+    distance = metal::min(distance, glsSacredSegment(p, 0.160000000, -0.277128129, 0.320000000, 0.554256258));
+    distance = metal::min(distance, glsSacredSegment(p, 0.160000000, -0.277128129, -0.320000000, 0.554256258));
+    distance = metal::min(distance, glsSacredSegment(p, 0.160000000, -0.277128129, -0.640000000, 0.000000000));
+    distance = metal::min(distance, glsSacredSegment(p, 0.160000000, -0.277128129, -0.320000000, -0.554256258));
+    distance = metal::min(distance, glsSacredSegment(p, 0.160000000, -0.277128129, 0.320000000, -0.554256258));
+    distance = metal::min(distance, glsSacredSegment(p, 0.640000000, 0.000000000, 0.320000000, 0.554256258));
+    distance = metal::min(distance, glsSacredSegment(p, 0.640000000, 0.000000000, -0.320000000, 0.554256258));
+    distance = metal::min(distance, glsSacredSegment(p, 0.640000000, 0.000000000, -0.640000000, 0.000000000));
+    distance = metal::min(distance, glsSacredSegment(p, 0.640000000, 0.000000000, -0.320000000, -0.554256258));
+    distance = metal::min(distance, glsSacredSegment(p, 0.640000000, 0.000000000, 0.320000000, -0.554256258));
+    distance = metal::min(distance, glsSacredSegment(p, 0.320000000, 0.554256258, -0.320000000, 0.554256258));
+    distance = metal::min(distance, glsSacredSegment(p, 0.320000000, 0.554256258, -0.640000000, 0.000000000));
+    distance = metal::min(distance, glsSacredSegment(p, 0.320000000, 0.554256258, -0.320000000, -0.554256258));
+    distance = metal::min(distance, glsSacredSegment(p, 0.320000000, 0.554256258, 0.320000000, -0.554256258));
+    distance = metal::min(distance, glsSacredSegment(p, -0.320000000, 0.554256258, -0.640000000, 0.000000000));
+    distance = metal::min(distance, glsSacredSegment(p, -0.320000000, 0.554256258, -0.320000000, -0.554256258));
+    distance = metal::min(distance, glsSacredSegment(p, -0.320000000, 0.554256258, 0.320000000, -0.554256258));
+    distance = metal::min(distance, glsSacredSegment(p, -0.640000000, 0.000000000, -0.320000000, -0.554256258));
+    distance = metal::min(distance, glsSacredSegment(p, -0.640000000, 0.000000000, 0.320000000, -0.554256258));
+    distance = metal::min(distance, glsSacredSegment(p, -0.320000000, -0.554256258, 0.320000000, -0.554256258));
+  }
+  return (distance - 0.016) * 12.0;
+}
+
+float glsStarDistance(metal::float2 p) {
+  float distance = 10.0;
+  bool inside = false;
+  {
+    metal::float2 a = metal::float2(0.000000000, 0.900000000);
+    metal::float2 b = metal::float2(-0.235114101, 0.323606798);
+    metal::float2 edge = b - a;
+    metal::float2 q = p - a;
+    distance = metal::min(distance, metal::length(q - edge * metal::clamp(metal::dot(q, edge) / metal::dot(edge, edge), 0.0, 1.0)));
+    if ((a.y > p.y) != (b.y > p.y)) {
+      if (p.x < a.x + (p.y - a.y) * (b.x - a.x) / (b.y - a.y)) { inside = !inside; }
+    }
+  }
+  {
+    metal::float2 a = metal::float2(-0.235114101, 0.323606798);
+    metal::float2 b = metal::float2(-0.855950865, 0.278115295);
+    metal::float2 edge = b - a;
+    metal::float2 q = p - a;
+    distance = metal::min(distance, metal::length(q - edge * metal::clamp(metal::dot(q, edge) / metal::dot(edge, edge), 0.0, 1.0)));
+    if ((a.y > p.y) != (b.y > p.y)) {
+      if (p.x < a.x + (p.y - a.y) * (b.x - a.x) / (b.y - a.y)) { inside = !inside; }
+    }
+  }
+  {
+    metal::float2 a = metal::float2(-0.855950865, 0.278115295);
+    metal::float2 b = metal::float2(-0.380422607, -0.123606798);
+    metal::float2 edge = b - a;
+    metal::float2 q = p - a;
+    distance = metal::min(distance, metal::length(q - edge * metal::clamp(metal::dot(q, edge) / metal::dot(edge, edge), 0.0, 1.0)));
+    if ((a.y > p.y) != (b.y > p.y)) {
+      if (p.x < a.x + (p.y - a.y) * (b.x - a.x) / (b.y - a.y)) { inside = !inside; }
+    }
+  }
+  {
+    metal::float2 a = metal::float2(-0.380422607, -0.123606798);
+    metal::float2 b = metal::float2(-0.529006727, -0.728115295);
+    metal::float2 edge = b - a;
+    metal::float2 q = p - a;
+    distance = metal::min(distance, metal::length(q - edge * metal::clamp(metal::dot(q, edge) / metal::dot(edge, edge), 0.0, 1.0)));
+    if ((a.y > p.y) != (b.y > p.y)) {
+      if (p.x < a.x + (p.y - a.y) * (b.x - a.x) / (b.y - a.y)) { inside = !inside; }
+    }
+  }
+  {
+    metal::float2 a = metal::float2(-0.529006727, -0.728115295);
+    metal::float2 b = metal::float2(-0.000000000, -0.400000000);
+    metal::float2 edge = b - a;
+    metal::float2 q = p - a;
+    distance = metal::min(distance, metal::length(q - edge * metal::clamp(metal::dot(q, edge) / metal::dot(edge, edge), 0.0, 1.0)));
+    if ((a.y > p.y) != (b.y > p.y)) {
+      if (p.x < a.x + (p.y - a.y) * (b.x - a.x) / (b.y - a.y)) { inside = !inside; }
+    }
+  }
+  {
+    metal::float2 a = metal::float2(-0.000000000, -0.400000000);
+    metal::float2 b = metal::float2(0.529006727, -0.728115295);
+    metal::float2 edge = b - a;
+    metal::float2 q = p - a;
+    distance = metal::min(distance, metal::length(q - edge * metal::clamp(metal::dot(q, edge) / metal::dot(edge, edge), 0.0, 1.0)));
+    if ((a.y > p.y) != (b.y > p.y)) {
+      if (p.x < a.x + (p.y - a.y) * (b.x - a.x) / (b.y - a.y)) { inside = !inside; }
+    }
+  }
+  {
+    metal::float2 a = metal::float2(0.529006727, -0.728115295);
+    metal::float2 b = metal::float2(0.380422607, -0.123606798);
+    metal::float2 edge = b - a;
+    metal::float2 q = p - a;
+    distance = metal::min(distance, metal::length(q - edge * metal::clamp(metal::dot(q, edge) / metal::dot(edge, edge), 0.0, 1.0)));
+    if ((a.y > p.y) != (b.y > p.y)) {
+      if (p.x < a.x + (p.y - a.y) * (b.x - a.x) / (b.y - a.y)) { inside = !inside; }
+    }
+  }
+  {
+    metal::float2 a = metal::float2(0.380422607, -0.123606798);
+    metal::float2 b = metal::float2(0.855950865, 0.278115295);
+    metal::float2 edge = b - a;
+    metal::float2 q = p - a;
+    distance = metal::min(distance, metal::length(q - edge * metal::clamp(metal::dot(q, edge) / metal::dot(edge, edge), 0.0, 1.0)));
+    if ((a.y > p.y) != (b.y > p.y)) {
+      if (p.x < a.x + (p.y - a.y) * (b.x - a.x) / (b.y - a.y)) { inside = !inside; }
+    }
+  }
+  {
+    metal::float2 a = metal::float2(0.855950865, 0.278115295);
+    metal::float2 b = metal::float2(0.235114101, 0.323606798);
+    metal::float2 edge = b - a;
+    metal::float2 q = p - a;
+    distance = metal::min(distance, metal::length(q - edge * metal::clamp(metal::dot(q, edge) / metal::dot(edge, edge), 0.0, 1.0)));
+    if ((a.y > p.y) != (b.y > p.y)) {
+      if (p.x < a.x + (p.y - a.y) * (b.x - a.x) / (b.y - a.y)) { inside = !inside; }
+    }
+  }
+  {
+    metal::float2 a = metal::float2(0.235114101, 0.323606798);
+    metal::float2 b = metal::float2(0.000000000, 0.900000000);
+    metal::float2 edge = b - a;
+    metal::float2 q = p - a;
+    distance = metal::min(distance, metal::length(q - edge * metal::clamp(metal::dot(q, edge) / metal::dot(edge, edge), 0.0, 1.0)));
+    if ((a.y > p.y) != (b.y > p.y)) {
+      if (p.x < a.x + (p.y - a.y) * (b.x - a.x) / (b.y - a.y)) { inside = !inside; }
+    }
+  }
+  return inside ? -distance : distance;
+}
+
+float glsStar7Distance(metal::float2 p) {
+  float distance = 10.0;
+  bool inside = false;
+  {
+    metal::float2 a = metal::float2(0.000000000, 0.900000000);
+    metal::float2 b = metal::float2(-0.199586520, 0.414445679);
+    metal::float2 edge = b - a;
+    metal::float2 q = p - a;
+    distance = metal::min(distance, metal::length(q - edge * metal::clamp(metal::dot(q, edge) / metal::dot(edge, edge), 0.0, 1.0)));
+    if ((a.y > p.y) != (b.y > p.y)) {
+      if (p.x < a.x + (p.y - a.y) * (b.x - a.x) / (b.y - a.y)) { inside = !inside; }
+    }
+  }
+  {
+    metal::float2 a = metal::float2(-0.199586520, 0.414445679);
+    metal::float2 b = metal::float2(-0.703648334, 0.561140822);
+    metal::float2 edge = b - a;
+    metal::float2 q = p - a;
+    distance = metal::min(distance, metal::length(q - edge * metal::clamp(metal::dot(q, edge) / metal::dot(edge, edge), 0.0, 1.0)));
+    if ((a.y > p.y) != (b.y > p.y)) {
+      if (p.x < a.x + (p.y - a.y) * (b.x - a.x) / (b.y - a.y)) { inside = !inside; }
+    }
+  }
+  {
+    metal::float2 a = metal::float2(-0.703648334, 0.561140822);
+    metal::float2 b = metal::float2(-0.448466840, 0.102359630);
+    metal::float2 edge = b - a;
+    metal::float2 q = p - a;
+    distance = metal::min(distance, metal::length(q - edge * metal::clamp(metal::dot(q, edge) / metal::dot(edge, edge), 0.0, 1.0)));
+    if ((a.y > p.y) != (b.y > p.y)) {
+      if (p.x < a.x + (p.y - a.y) * (b.x - a.x) / (b.y - a.y)) { inside = !inside; }
+    }
+  }
+  {
+    metal::float2 a = metal::float2(-0.448466840, 0.102359630);
+    metal::float2 b = metal::float2(-0.877435121, -0.200268841);
+    metal::float2 edge = b - a;
+    metal::float2 q = p - a;
+    distance = metal::min(distance, metal::length(q - edge * metal::clamp(metal::dot(q, edge) / metal::dot(edge, edge), 0.0, 1.0)));
+    if ((a.y > p.y) != (b.y > p.y)) {
+      if (p.x < a.x + (p.y - a.y) * (b.x - a.x) / (b.y - a.y)) { inside = !inside; }
+    }
+  }
+  {
+    metal::float2 a = metal::float2(-0.877435121, -0.200268841);
+    metal::float2 b = metal::float2(-0.359642482, -0.286805309);
+    metal::float2 edge = b - a;
+    metal::float2 q = p - a;
+    distance = metal::min(distance, metal::length(q - edge * metal::clamp(metal::dot(q, edge) / metal::dot(edge, edge), 0.0, 1.0)));
+    if ((a.y > p.y) != (b.y > p.y)) {
+      if (p.x < a.x + (p.y - a.y) * (b.x - a.x) / (b.y - a.y)) { inside = !inside; }
+    }
+  }
+  {
+    metal::float2 a = metal::float2(-0.359642482, -0.286805309);
+    metal::float2 b = metal::float2(-0.390495365, -0.810871981);
+    metal::float2 edge = b - a;
+    metal::float2 q = p - a;
+    distance = metal::min(distance, metal::length(q - edge * metal::clamp(metal::dot(q, edge) / metal::dot(edge, edge), 0.0, 1.0)));
+    if ((a.y > p.y) != (b.y > p.y)) {
+      if (p.x < a.x + (p.y - a.y) * (b.x - a.x) / (b.y - a.y)) { inside = !inside; }
+    }
+  }
+  {
+    metal::float2 a = metal::float2(-0.390495365, -0.810871981);
+    metal::float2 b = metal::float2(-0.000000000, -0.460000000);
+    metal::float2 edge = b - a;
+    metal::float2 q = p - a;
+    distance = metal::min(distance, metal::length(q - edge * metal::clamp(metal::dot(q, edge) / metal::dot(edge, edge), 0.0, 1.0)));
+    if ((a.y > p.y) != (b.y > p.y)) {
+      if (p.x < a.x + (p.y - a.y) * (b.x - a.x) / (b.y - a.y)) { inside = !inside; }
+    }
+  }
+  {
+    metal::float2 a = metal::float2(-0.000000000, -0.460000000);
+    metal::float2 b = metal::float2(0.390495365, -0.810871981);
+    metal::float2 edge = b - a;
+    metal::float2 q = p - a;
+    distance = metal::min(distance, metal::length(q - edge * metal::clamp(metal::dot(q, edge) / metal::dot(edge, edge), 0.0, 1.0)));
+    if ((a.y > p.y) != (b.y > p.y)) {
+      if (p.x < a.x + (p.y - a.y) * (b.x - a.x) / (b.y - a.y)) { inside = !inside; }
+    }
+  }
+  {
+    metal::float2 a = metal::float2(0.390495365, -0.810871981);
+    metal::float2 b = metal::float2(0.359642482, -0.286805309);
+    metal::float2 edge = b - a;
+    metal::float2 q = p - a;
+    distance = metal::min(distance, metal::length(q - edge * metal::clamp(metal::dot(q, edge) / metal::dot(edge, edge), 0.0, 1.0)));
+    if ((a.y > p.y) != (b.y > p.y)) {
+      if (p.x < a.x + (p.y - a.y) * (b.x - a.x) / (b.y - a.y)) { inside = !inside; }
+    }
+  }
+  {
+    metal::float2 a = metal::float2(0.359642482, -0.286805309);
+    metal::float2 b = metal::float2(0.877435121, -0.200268841);
+    metal::float2 edge = b - a;
+    metal::float2 q = p - a;
+    distance = metal::min(distance, metal::length(q - edge * metal::clamp(metal::dot(q, edge) / metal::dot(edge, edge), 0.0, 1.0)));
+    if ((a.y > p.y) != (b.y > p.y)) {
+      if (p.x < a.x + (p.y - a.y) * (b.x - a.x) / (b.y - a.y)) { inside = !inside; }
+    }
+  }
+  {
+    metal::float2 a = metal::float2(0.877435121, -0.200268841);
+    metal::float2 b = metal::float2(0.448466840, 0.102359630);
+    metal::float2 edge = b - a;
+    metal::float2 q = p - a;
+    distance = metal::min(distance, metal::length(q - edge * metal::clamp(metal::dot(q, edge) / metal::dot(edge, edge), 0.0, 1.0)));
+    if ((a.y > p.y) != (b.y > p.y)) {
+      if (p.x < a.x + (p.y - a.y) * (b.x - a.x) / (b.y - a.y)) { inside = !inside; }
+    }
+  }
+  {
+    metal::float2 a = metal::float2(0.448466840, 0.102359630);
+    metal::float2 b = metal::float2(0.703648334, 0.561140822);
+    metal::float2 edge = b - a;
+    metal::float2 q = p - a;
+    distance = metal::min(distance, metal::length(q - edge * metal::clamp(metal::dot(q, edge) / metal::dot(edge, edge), 0.0, 1.0)));
+    if ((a.y > p.y) != (b.y > p.y)) {
+      if (p.x < a.x + (p.y - a.y) * (b.x - a.x) / (b.y - a.y)) { inside = !inside; }
+    }
+  }
+  {
+    metal::float2 a = metal::float2(0.703648334, 0.561140822);
+    metal::float2 b = metal::float2(0.199586520, 0.414445679);
+    metal::float2 edge = b - a;
+    metal::float2 q = p - a;
+    distance = metal::min(distance, metal::length(q - edge * metal::clamp(metal::dot(q, edge) / metal::dot(edge, edge), 0.0, 1.0)));
+    if ((a.y > p.y) != (b.y > p.y)) {
+      if (p.x < a.x + (p.y - a.y) * (b.x - a.x) / (b.y - a.y)) { inside = !inside; }
+    }
+  }
+  {
+    metal::float2 a = metal::float2(0.199586520, 0.414445679);
+    metal::float2 b = metal::float2(0.000000000, 0.900000000);
+    metal::float2 edge = b - a;
+    metal::float2 q = p - a;
+    distance = metal::min(distance, metal::length(q - edge * metal::clamp(metal::dot(q, edge) / metal::dot(edge, edge), 0.0, 1.0)));
+    if ((a.y > p.y) != (b.y > p.y)) {
+      if (p.x < a.x + (p.y - a.y) * (b.x - a.x) / (b.y - a.y)) { inside = !inside; }
+    }
+  }
+  return inside ? -distance : distance;
+}
+
+float glsShapeDistance(metal::float2 p, constant Uniforms& u) {
+  if (u.shape.x > 12.5) { return 1.0 + glsStar7Distance(p); }
+  if (u.shape.x > 11.5) { return 1.0 + glsStarDistance(p); }
+  if (u.shape.x > 9.5 && u.shape.x < 10.5) {
+    float left = metal::sqrt((p.x + 0.4) * (p.x + 0.4) + p.y * p.y) - 0.8;
+    float right = metal::sqrt((p.x - 0.4) * (p.x - 0.4) + p.y * p.y) - 0.8;
+    return 1.0 + glsBevelMax(left, right);
+  }
+  if (u.shape.x > 7.5) { return 1.0 + glsSacredDistance(p, u); }
+  if (u.shape.x < 0.5) { return metal::length(p); }
+  // Signed, normalized face distances give every edge the same glass thickness.
+  if (u.shape.x < 1.5) {
+    return 1.0 + glsBevelMax(metal::abs(p.x) - 0.8660254, (metal::abs(p.y) + metal::abs(p.x) * 0.5773503 - 1.0) * 0.8660254);
+  }
+  if (u.shape.x < 2.5) {
+    return 1.0 + glsBevelMax(metal::abs(p.y) - 0.65, (metal::abs(p.x - p.y * 0.4) - 0.65) / 1.077033);
+  }
+  if (u.shape.x < 3.5) {
+    return 1.0 + glsBevelMax(metal::abs(p.y) - 0.65, (metal::abs(p.x) + p.y * 0.3 - 0.565) / 1.044031);
+  }
+  if (u.shape.x < 4.5) { return 1.0 + glsBevelMax(glsBevelMax((p.x * -0.866025404 + p.y * 0.500000000 - 0.450000000), (p.x * -0.000000000 + p.y * -1.000000000 - 0.450000000)), (p.x * 0.866025404 + p.y * 0.500000000 - 0.450000000)); }
+  if (u.shape.x < 5.5) { return 1.0 + glsBevelMax(glsBevelMax(glsBevelMax(glsBevelMax((p.x * -0.587785252 + p.y * 0.809016994 - 0.728115295), (p.x * -0.951056516 + p.y * -0.309016994 - 0.728115295)), (p.x * -0.000000000 + p.y * -1.000000000 - 0.728115295)), (p.x * 0.951056516 + p.y * -0.309016994 - 0.728115295)), (p.x * 0.587785252 + p.y * 0.809016994 - 0.728115295)); }
+  if (u.shape.x < 6.5) { return 1.0 + glsBevelMax(glsBevelMax(glsBevelMax(glsBevelMax(glsBevelMax((p.x * -0.500000000 + p.y * 0.866025404 - 0.779422863), (p.x * -1.000000000 + p.y * 0.000000000 - 0.779422863)), (p.x * -0.500000000 + p.y * -0.866025404 - 0.779422863)), (p.x * 0.500000000 + p.y * -0.866025404 - 0.779422863)), (p.x * 1.000000000 + p.y * -0.000000000 - 0.779422863)), (p.x * 0.500000000 + p.y * 0.866025404 - 0.779422863)); }
+  return 1.0 + glsBevelMax(glsBevelMax(glsBevelMax(glsBevelMax(glsBevelMax(glsBevelMax(glsBevelMax((p.x * -0.382683432 + p.y * 0.923879533 - 0.831491579), (p.x * -0.923879533 + p.y * 0.382683432 - 0.831491579)), (p.x * -0.923879533 + p.y * -0.382683432 - 0.831491579)), (p.x * -0.382683432 + p.y * -0.923879533 - 0.831491579)), (p.x * 0.382683432 + p.y * -0.923879533 - 0.831491579)), (p.x * 0.923879533 + p.y * -0.382683432 - 0.831491579)), (p.x * 0.923879533 + p.y * 0.382683432 - 0.831491579)), (p.x * 0.382683432 + p.y * 0.923879533 - 0.831491579));
+}
+
 metal::float2 glsContourNormal(
     metal::float2 uv_2,
     float rad_1,
@@ -1471,6 +1957,13 @@ metal::float2 glsContourNormal(
     float amount_1,
     constant Uniforms& u
 ) {
+    if (u.shape.x > 0.5) {
+      metal::float2 p = uv_2 / metal::max(rad_1 * glsContourScale(uv_2, t_18, amount_1, u), 0.05);
+      float e = 0.006;
+      metal::float2 g = metal::float2(glsShapeDistance(p + metal::float2(e, 0.0), u) - glsShapeDistance(p - metal::float2(e, 0.0), u), glsShapeDistance(p + metal::float2(0.0, e), u) - glsShapeDistance(p - metal::float2(0.0, e), u));
+      return g / metal::max(metal::length(g), 0.00001);
+    }
+
     float distance_1 = metal::length(uv_2);
     if (distance_1 <= 0.0001) {
         return metal::float2(0.0);
@@ -1503,30 +1996,69 @@ metal::float2 glsRefractionNormal(
     return metal::normalize(base + tangent * wave);
 }
 
+// Premultiplied, animated aura behind the silhouette, independent of the shell.
+metal::float4 glsAuraBehind(metal::float4 base, metal::float2 uv01, constant Uniforms& u) {
+  if (u.aura.x < 0.5 || u.aura.y <= 0.0) { return base; }
+  auto fc = metal::float2(uv01.x, 1.0 - uv01.y) * u.size;
+  auto uv = (2.0 * fc - u.size) / glsRenderMinSize(u);
+  auto rad = metal::max(u.radius, 0.05) * glsContourScale(uv, u.time * u.speed, u.contourDeform, u);
+  auto emblem = u.shape.x > 7.5 && u.shape.x < 11.5 && !(u.shape.x > 9.5 && u.shape.x < 10.5);
+  auto distance = metal::select(glsShapeDistance(uv / rad, u) - 1.0, metal::length(uv / rad) - 0.85, emblem) * rad;
+  auto phase = u.time * u.speed * u.aura.w;
+  auto angle = metal::atan2(uv.y, uv.x);
+  auto motion = 0.78 + 0.12 * metal::sin(angle * 3.0 - phase * 1.4) + 0.1 * metal::sin(angle * 5.0 + phase * 0.9);
+  auto effect = int(u.auraEffect.x + 0.5);
+  auto pulse = 0.5 + 0.5 * metal::sin(phase * 2.8);
+  auto pulseWidth = metal::select(1.0, 0.65 + 0.55 * pulse, effect == 1);
+  auto width = metal::max(u.aura.z, 0.03) * motion * pulseWidth;
+  auto radial = metal::max(distance, 0.0) / width;
+  auto effectLight = 1.0;
+  if (effect == 1) { effectLight = 0.35 + 0.65 * pulse; }
+  if (effect == 2) {
+    auto wave = 0.5 + 0.5 * metal::sin(radial * 28.0 - phase * 4.0);
+    effectLight = 0.22 + 0.78 * wave * wave * wave;
+  }
+  if (effect == 3) {
+    auto spiral = 0.5 + 0.5 * metal::sin(angle * 5.0 - radial * 14.0 - phase * 2.0);
+    effectLight = 0.2 + 0.8 * spiral * spiral;
+  }
+  auto outside = metal::smoothstep(-0.004, 0.018, distance);
+  auto falloff = metal::exp(-metal::pow(metal::max(distance, 0.0) / width, 2.0) * 2.8);
+  auto alpha = metal::clamp(u.aura.y * falloff * outside * effectLight * (0.84 + 0.16 * metal::sin(phase * 1.7)), 0.0, 0.85);
+  // Three colors blend in a continuous cycle with no seam at the angle wrap.
+  auto colorPhase = metal::fract(angle / 6.2831853 - phase * 0.085 + radial * 0.14) * 3.0;
+  auto auraTint = u.auraColor.xyz;
+  if (colorPhase < 1.0) { auraTint = metal::mix(u.auraColor.xyz, u.auraColorB.xyz, metal::smoothstep(0.0, 1.0, colorPhase)); }
+  else if (colorPhase < 2.0) { auraTint = metal::mix(u.auraColorB.xyz, u.auraColorC.xyz, metal::smoothstep(0.0, 1.0, colorPhase - 1.0)); }
+  else { auraTint = metal::mix(u.auraColorC.xyz, u.auraColor.xyz, metal::smoothstep(0.0, 1.0, colorPhase - 2.0)); }
+  auto tint = metal::mix(auraTint, metal::float3(1.0), metal::exp(-metal::max(distance, 0.0) / 0.018) * 0.2);
+  return metal::float4(base.xyz + tint * alpha * (1.0 - base.w), base.w + alpha * (1.0 - base.w));
+}
+
 metal::float4 orbGlassLiquidAnim(
     metal::float2 uv01_,
     constant Uniforms& u
 ) {
     metal::float2 fc = metal::float2(uv01_.x, 1.0 - uv01_.y) * u.size;
     metal::float2 uv = (2.0 * fc - u.size)
-                     / metal::max(metal::min(u.size.x, u.size.y), 1.0);
+                     / glsRenderMinSize(u);
     float rad = metal::max(u.radius, 0.05);
     float t = u.time * u.speed;
     int s = naga_f2i32(u.style + 0.5);
     bool emissionOnly = u.glassEnabled <= 0.5 && (s == 9 || s == 14 || s == 24);
     float contourRad = rad * glsContourScale(uv, t, u.contourDeform, u);
 
-    if (metal::length(uv) > contourRad * (1.01 + mfEdgeD(u.edgeSoftness))) {
-        metal::float3 halo = mfEdgeGlow(metal::float3(0.0), uv, metal::float2(0.0),
+    if (glsShapeDistance(uv / contourRad, u) > (1.01 + mfEdgeD(u.edgeSoftness))) {
+        metal::float3 halo = mfEdgeGlow(metal::float3(0.0), uv * (glsShapeDistance(uv / contourRad, u) * contourRad / metal::max(metal::length(uv), 0.00001)), metal::float2(0.0),
                                          contourRad, u.edgeSoftness, u.edgeGlow,
                                          u.glowColor.xyz);
         halo = metal::clamp(halo, metal::float3(0.0), metal::float3(1.0));
         float haloAlpha = metal::max(halo.x, metal::max(halo.y, halo.z));
-        return metal::float4(halo, haloAlpha);
+        return glsAuraBehind(metal::float4(halo, haloAlpha), uv01_, u);
     }
 
     metal::float2 p = uv / contourRad;
-    float pd = metal::length(p);
+    float pd = glsShapeDistance(p, u);
     metal::float2 fu = p / GL_FU;
     int md = -1;
     if (s == 1) { md = 1; }
@@ -1541,7 +2073,7 @@ metal::float4 orbGlassLiquidAnim(
     float refractionWidth = 0.015 + 0.95 * metal::clamp(u.shellMidAlpha, 0.0, 1.0);
     float refractionT = edgeDepth / metal::max(refractionWidth, 0.001);
     float refractionProfile = metal::pow(glsRefractionProfile(refractionT), 0.68);
-    float refractionAmount = 1.6 * metal::clamp(u.glassOpacity, 0.0, 1.0)
+    float refractionAmount = (u.shape.x < 0.5 ? 1.6 : 0.42) * metal::clamp(u.glassOpacity, 0.0, 1.0)
                            * refractionProfile;
     metal::float2 refractedP = p - normal * refractionAmount;
     metal::float3 fcol = metal::float3(0.0);
@@ -1589,10 +2121,12 @@ metal::float4 orbGlassLiquidAnim(
             : opticalRim * u.glassOpacity * 0.14;
         col = glsOver(col, u.shellInner.xyz, innerRimAlpha);
 
+        metal::float2 lightingVector = normal + (u.shape.x > 0.5 ? p * 0.32 : metal::float2(0.0));
+        metal::float2 lightingNormal = lightingVector / metal::max(metal::length(lightingVector), 0.00001);
         metal::float2 coolDirection = metal::normalize(metal::float2(0.84, 0.54));
         metal::float2 warmDirection = metal::normalize(metal::float2(-0.62, -0.78));
-        float coolSplit = glsHighlightLobe(normal, coolDirection, -0.32, 1.8);
-        float warmSplit = glsHighlightLobe(normal, warmDirection, -0.28, 2.0);
+        float coolSplit = glsHighlightLobe(lightingNormal, coolDirection, -0.32, 1.8);
+        float warmSplit = glsHighlightLobe(lightingNormal, warmDirection, -0.28, 2.0);
         float dispersion = opticalRim * metal::clamp(u.gloss, 0.0, 2.0)
                          * (0.8 + 0.8 * u.shellEdgeAlpha);
         col = glsOver(col, u.shellMid.xyz, dispersion * coolSplit);
@@ -1600,17 +2134,23 @@ metal::float4 orbGlassLiquidAnim(
 
         float edgeShadow = opticalRim * (0.015 + 0.15 * u.shellEdgeAlpha)
                          * (0.15 + 0.85 * metal::max(
-                            metal::dot(normal, metal::float2(0.45, -0.89)), 0.0));
+                            metal::dot(lightingNormal, metal::float2(0.45, -0.89)), 0.0));
         col *= 1.0 - edgeShadow;
 
         metal::float2 keyDirection = metal::normalize(metal::float2(-0.68, 0.73));
         metal::float2 fillDirection = metal::normalize(metal::float2(0.74, -0.67));
-        float key = opticalRim * glsHighlightLobe(normal, keyDirection, 0.2, 2.8)
+        float key = opticalRim * glsHighlightLobe(lightingNormal, keyDirection, 0.2, 2.8)
                   * metal::clamp(u.sheen, 0.0, 2.0) * 1.4;
-        float fill = opticalRim * glsHighlightLobe(normal, fillDirection, 0.4, 3.6)
+        float fill = opticalRim * glsHighlightLobe(lightingNormal, fillDirection, 0.4, 3.6)
                    * metal::clamp(u.sheen, 0.0, 2.0) * 1.0;
         col = glsOver(col, u.sheenColor.xyz, key);
         col = glsOver(col, u.specColor.xyz, fill);
+        if (u.shape.x > 0.5) {
+            float lip = metal::exp(-edgeDepth * edgeDepth / 0.00012) * clearFa;
+            float stripe = metal::dot(p, metal::float2(0.6, 0.8)) - 0.24;
+            float reflection = metal::exp(-stripe * stripe / 0.075);
+            col = glsOver(col, u.sheenColor.xyz, lip * u.sheen * 0.38 + reflection * u.glassOpacity * u.sheen * 0.075 * clearFa);
+        }
     }
 
     float ballA = 1.0 - metal::smoothstep(
@@ -1618,7 +2158,8 @@ metal::float4 orbGlassLiquidAnim(
         1.01 + mfEdgeD(u.edgeSoftness), pd);
     col = metal::clamp(col * metal::max(u.exposure, 0.0),
                        metal::float3(0.0), metal::float3(1.0)) * ballA;
-    metal::float3 edged = mfEdgeGlow(col, uv, metal::float2(0.0), contourRad,
+    if (u.shape.x > 0.5 && u.shape.x < 1.5) { col *= p.y > metal::abs(p.x) * 0.5773503 ? 1.16 : (p.x < 0.0 ? 0.94 : 0.72); }
+    metal::float3 edged = mfEdgeGlow(col, uv * (glsShapeDistance(uv / contourRad, u) * contourRad / metal::max(metal::length(uv), 0.00001)), metal::float2(0.0), contourRad,
                                      u.edgeSoftness, u.edgeGlow, u.glowColor.xyz);
     metal::float3 finalColor = metal::clamp(
         edged, metal::float3(0.0), metal::float3(1.0));
@@ -1627,7 +2168,7 @@ metal::float4 orbGlassLiquidAnim(
     float finalAlpha = (emissionOnly || particleGlassOverlay)
         ? emissionAlpha
         : sphereAlpha;
-    return metal::float4(finalColor, finalAlpha);
+    return glsAuraBehind(metal::float4(finalColor, finalAlpha), uv01_, u);
 }
 
 struct vs_mainInput {
@@ -1655,6 +2196,27 @@ vertex vs_mainOutput vs_main(
 struct fs_mainInput {
     metal::float2 uv [[user(loc0), center_perspective]];
 };
+
+metal::float2 asciiCellSize(constant Uniforms& u) {
+    return metal::float2(0.65, 1.0) * metal::clamp(u.renderViewport.z, 5.0, 24.0) * metal::max(glsRenderMinSize(u) / 700.0, 0.75);
+}
+metal::float2 asciiUv(metal::float2 uv, constant Uniforms& u) {
+    if (u.renderViewport.y < 0.5) return uv;
+    auto cell = asciiCellSize(u);
+    return metal::clamp((metal::floor(uv * u.size / cell) + 0.5) * cell / u.size, metal::float2(0.0), metal::float2(1.0));
+}
+metal::float4 asciiColor(metal::float4 color, metal::float2 uv, constant Uniforms& u) {
+    if (u.renderViewport.y < 0.5) return color;
+    float brightness = metal::dot(color.xyz / metal::max(color.w, 0.001), metal::float3(0.2126, 0.7152, 0.0722));
+    const uint glyphs[8] = {4194304u, 131200u, 14336u, 145536u, 18185553u, 1016800u, 11512810u, 15398446u};
+    uint glyph = glyphs[uint(metal::clamp(metal::sqrt(metal::max(brightness, 0.0)) * 7.0, 0.0, 7.0))];
+    auto local = metal::fract(uv * u.size / asciiCellSize(u));
+    auto pixel = metal::uint2(metal::floor(local * metal::float2(6.0, 7.0)));
+    uint bit = metal::min(pixel.y * 5u + pixel.x, 31u);
+    float ink = pixel.x < 5u && pixel.y < 5u && ((glyph >> bit) & 1u) == 1u ? 1.0 : 0.0;
+    return color * ink;
+}
+
 struct fs_mainOutput {
     metal::float4 member_1 [[color(0)]];
 };
@@ -1663,14 +2225,14 @@ fragment fs_mainOutput fs_main(
 , metal::float4 pos [[position]]
 , constant Uniforms& u [[buffer(0)]]
 ) {
-    const VOut in = { pos, varyings_1.uv };
-    metal::float4 _e2 = orbGlassLiquidAnim(in.uv, u);
+    const VOut in = { pos, asciiUv(varyings_1.uv, u) };
+    metal::float4 _e2 = asciiColor(orbGlassLiquidAnim(in.uv, u), varyings_1.uv, u);
     metal::float2 _e12 = u.size;
     metal::float2 fc_1 = metal::float2(in.uv.x, 1.0 - in.uv.y) * _e12;
     metal::float2 _e18 = u.size;
     float _e23 = u.size.x;
     float _e27 = u.size.y;
-    metal::float2 uv_4 = ((2.0 * fc_1) - _e18) / metal::float2(metal::max(metal::min(_e23, _e27), 1.0));
+    metal::float2 uv_4 = ((2.0 * fc_1) - _e18) / metal::float2(glsRenderMinSize(u));
     float _e35 = u.radius;
     float rad_3 = metal::max(_e35, 0.05);
     float _e40 = u.time;
@@ -1683,8 +2245,8 @@ fragment fs_mainOutput fs_main(
     metal::float2 _e80 = u.size;
     metal::float2 q_12 = ((2.0 * fc_1) - _e76) / _e80;
     float fitEnd = 1.0;
-    float fitFeather = 2.0 / metal::max(metal::min(u.size.x, u.size.y), 1.0);
-    float fitStart = metal::min(metal::mix(contourRad_1, fitEnd, 0.5), fitEnd - fitFeather);
+    float fitFeather = 2.0 / glsRenderMinSize(u);
+    float fitStart = u.aura.x > 0.5 ? fitEnd - fitFeather : metal::min(metal::mix(contourRad_1, fitEnd, 0.5), fitEnd - fitFeather);
     float fit = 1.0 - metal::smoothstep(fitStart, fitEnd, metal::max(metal::abs(q_12.x), metal::abs(q_12.y)));
     return fs_mainOutput { metal::float4(_e2.xyz * fit, _e2.w * fit) };
 }
@@ -1803,7 +2365,7 @@ vertex ribbon_vs_mainOutput ribbon_vs_main(
     position = prRotateY(position, t * 0.105 + metal::sin(t * 0.21) * 0.11);
     position = prRotateX(position, -0.2 + metal::sin(t * 0.16 + layer * 0.1) * 0.16);
 
-    float minSize = metal::max(metal::min(u.size.x, u.size.y), 1.0);
+    float minSize = glsRenderMinSize(u);
     float depthScale = 0.88 + position.z * 0.16;
     metal::float2 orbPosition = position.xy * u.radius * 1.45 * depthScale;
     metal::float2 clip = metal::float2(
@@ -1870,7 +2432,7 @@ metal::float2 prTextureUvFromOrb(
     float contourRad,
     constant Uniforms& u
 ) {
-    float minSize = metal::max(metal::min(u.size.x, u.size.y), 1.0);
+    float minSize = glsRenderMinSize(u);
     metal::float2 fc = (p * contourRad * minSize + u.size) * 0.5;
     return metal::clamp(
         metal::float2(
@@ -1884,41 +2446,43 @@ struct ribbon_composite_fs_mainOutput {
     metal::float4 color [[color(0)]];
 };
 
-fragment ribbon_composite_fs_mainOutput ribbon_composite_fs_main(
-    fs_mainInput in [[stage_in]],
-    metal::float4 position [[position]],
-    constant Uniforms& u [[buffer(0)]],
-    metal::texture2d<float> ribbonTexture [[texture(0)]]
+ribbon_composite_fs_mainOutput ribbonColor(
+    fs_mainInput in,
+    constant Uniforms& u,
+    metal::texture2d<float> ribbonTexture
 ) {
     constexpr metal::sampler ribbonSampler(
         metal::coord::normalized,
         metal::address::clamp_to_edge,
         metal::filter::linear);
     metal::float4 direct = ribbonTexture.sample(ribbonSampler, in.uv);
-    if (u.glassEnabled <= 0.5) {
-        return ribbon_composite_fs_mainOutput { direct };
+    if (u.glassEnabled <= 0.5 && u.shape.x < 0.5) {
+        return ribbon_composite_fs_mainOutput { glsAuraBehind(direct, in.uv, u) };
     }
 
     metal::float2 fc = metal::float2(in.uv.x, 1.0 - in.uv.y) * u.size;
-    float minSize = metal::max(metal::min(u.size.x, u.size.y), 1.0);
+    float minSize = glsRenderMinSize(u);
     metal::float2 uv = (2.0 * fc - u.size) / minSize;
     float rad = metal::max(u.radius, 0.05);
     float t = u.time * u.speed;
     float contourRad = rad * glsContourScale(uv, t, u.contourDeform, u);
+    if (u.glassEnabled <= 0.5) {
+        return ribbon_composite_fs_mainOutput { glsAuraBehind(direct * (1.0 - metal::smoothstep(0.99, 1.01, glsShapeDistance(uv / contourRad, u))), in.uv, u) };
+    }
     metal::float4 shell = orbGlassLiquidAnim(in.uv, u);
-    if (metal::length(uv) > contourRad * (1.01 + mfEdgeD(u.edgeSoftness))) {
+    if (glsShapeDistance(uv / contourRad, u) > (1.01 + mfEdgeD(u.edgeSoftness))) {
         return ribbon_composite_fs_mainOutput { shell };
     }
 
     metal::float2 p = uv / contourRad;
-    float pd = metal::length(p);
+    float pd = glsShapeDistance(p, u);
     float clearFa = 1.0 - metal::smoothstep(GL_CLEAR_EA, GL_CLEAR_EB, pd);
     metal::float2 normal = glsContourNormal(uv, rad, t, u.contourDeform, u);
     float edgeDepth = metal::max(1.0 - pd, 0.0);
     float refractionWidth = 0.015 + 0.95 * metal::clamp(u.shellMidAlpha, 0.0, 1.0);
     float refractionT = edgeDepth / metal::max(refractionWidth, 0.001);
     float refractionProfile = metal::pow(glsRefractionProfile(refractionT), 0.68);
-    float refractionAmount = 1.6 * metal::clamp(u.glassOpacity, 0.0, 1.0)
+    float refractionAmount = (u.shape.x < 0.5 ? 1.6 : 0.42) * metal::clamp(u.glassOpacity, 0.0, 1.0)
                            * refractionProfile;
     metal::float2 refractedP = p - normal * refractionAmount;
     float channelSplit = 0.14 * metal::clamp(u.gloss, 0.0, 2.0)
@@ -1944,4 +2508,15 @@ fragment ribbon_composite_fs_mainOutput ribbon_composite_fs_main(
             shell.xyz + refracted.xyz * (1.0 - shell.w),
             shell.w + refracted.w * (1.0 - shell.w))
     };
+}
+
+fragment ribbon_composite_fs_mainOutput ribbon_composite_fs_main(
+    fs_mainInput in [[stage_in]],
+    metal::float4 position [[position]],
+    constant Uniforms& u [[buffer(0)]],
+    metal::texture2d<float> ribbonTexture [[texture(0)]]
+) {
+    fs_mainInput sample = in;
+    sample.uv = asciiUv(in.uv, u);
+    return ribbon_composite_fs_mainOutput { asciiColor(ribbonColor(sample, u, ribbonTexture).color, in.uv, u) };
 }

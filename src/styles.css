@@ -209,36 +209,8 @@ input {
   backdrop-filter: blur(14px) saturate(130%);
 }
 
-.language-control {
-  position: absolute;
-  top: 16px;
-  left: 16px;
-  z-index: 3;
-  width: 84px;
-  padding: 6px;
-  border: 1px solid color-mix(in oklab, var(--border) 24%, transparent);
-  border-radius: 8px;
-  background: color-mix(in oklab, var(--background) 82%, transparent);
-  box-shadow: 0 12px 32px -20px rgb(0 0 0 / 80%);
-  backdrop-filter: blur(14px) saturate(130%);
-}
 
-.language-control [data-control-field-label] {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border: 0;
-}
 
-.language-control [data-slot="toggle-group-item"] {
-  min-height: 28px;
-  padding-inline: 7px;
-  font-size: 11px;
-}
 
 .stage-mode-control [data-control-field-label] {
   font-size: 11px;
@@ -276,7 +248,7 @@ input {
   flex: 0 0 176px;
   overflow: hidden;
   transform: none;
-  border-radius: 50%;
+  border-radius: 0;
   background: transparent;
 }
 
@@ -363,27 +335,6 @@ input {
   background: color-mix(in oklab, var(--background) 78%, transparent);
   box-shadow: 0 12px 32px -18px rgb(0 0 0 / 70%);
   backdrop-filter: blur(14px) saturate(130%);
-}
-
-.github-link {
-  border-color: rgb(255 255 255 / 12%);
-  color: rgb(255 255 255 / 72%);
-  background: color-mix(in oklab, var(--background) 78%, transparent);
-  box-shadow: 0 12px 32px -18px rgb(0 0 0 / 70%);
-  backdrop-filter: blur(14px) saturate(130%);
-}
-
-.github-link svg {
-  opacity: 0.72 !important;
-}
-
-.github-link:hover {
-  border-color: rgb(255 255 255 / 24%);
-  color: #fff;
-}
-
-.github-link:hover svg {
-  opacity: 1 !important;
 }
 
 .preset-dock,
@@ -679,16 +630,7 @@ input {
     bottom: 12px;
   }
 
-  .language-control {
-    top: 12px;
-    left: 12px;
-    width: 68px;
-    padding: 4px;
-  }
 
-  .language-control [data-slot="toggle-group-item"] {
-    padding-inline: 4px;
-  }
 
   .stage-mode-control {
     left: calc(50% + 8px);
@@ -730,3 +672,29 @@ input {
 .orb-audio-gain input { grid-column: 1 / -1; width: 100%; accent-color: #a99aff; }
 .orb-audio-controls meter { width: 100%; height: 6px; }
 .orb-audio-player audio { width: 100%; height: 36px; }
+
+.orb-audio-bands { display: grid; gap: 12px; padding: 10px; border: 1px solid var(--border); border-radius: 8px; }
+.orb-audio-band { display: grid; gap: 4px; min-width: 0; }
+
+/* Extra transparent canvas space lets the aura extend beyond the zoomed figure. */
+.orb-stage[data-aura-enabled="true"] .orb-canvas {
+  inset: -50%;
+  width: 200%;
+  height: 200%;
+}
+.orb-stage[data-aura-enabled="true"][data-preview-mode="scene"] .orb-visual {
+  overflow: visible;
+}
+
+.orb-error-detail {
+  display: block;
+  margin-top: 4px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 140px;
+  overflow-y: auto;
+}
+
+.orb-canvas { cursor: grab; touch-action: none; }
+.orb-canvas[data-dragging="true"] { cursor: grabbing; }
+.orb-canvas:focus-visible { outline: 2px solid #a898ff; outline-offset: -4px; border-radius: 12px; }

@@ -107,7 +107,7 @@ export function SliderControl({
         <ControlFieldLabel>{name}</ControlFieldLabel>
         <div className="inline-flex h-5 shrink-0 items-center gap-1.5">
           <EditableSliderValueLabel
-            ariaLabel={`${name}数值`}
+            ariaLabel={`${name} value`}
             disabled={disabled}
             editAriaLabel={editValueLabel}
             maxValueLabel={getNumericValueLabelWidthReference(

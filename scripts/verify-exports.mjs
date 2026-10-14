@@ -130,7 +130,7 @@ try {
   );
   assert.equal(
     uniforms.orbUniformFloatCount,
-    uniforms.orbColorOffset + 24 * 4,
+    uniforms.orbColorOffset + 24 * 4 + 32,
     "uniform 缓冲区长度必须与标量参数和 24 组颜色精确匹配",
   );
   assert.equal(
@@ -138,6 +138,139 @@ try {
     presets.styleNames.length,
     "预设名称不能重复",
   );
+
+  // Execute the WGSL scalar field to verify equal shell thickness on every face.
+  function scalarBody(name) {
+    const body = wgsl.match(new RegExp(`fn ${name}\\([^]*?\\) -> f32 \\{([^]*?)\\n\\}`))[1];
+    return body.replace(/\blet\b/g, "const")
+      .replace(/\bmax\(/g, "Math.max(").replace(/\bsqrt\(/g, "Math.sqrt(").replace(/\babs\(/g, "Math.abs(")
+      .replace(/length\(p\)/g, "Math.hypot(p.x, p.y)");
+  }
+  const bevelMax = new Function("a", "b", scalarBody("glsBevelMax"));
+  const shapeField = new Function("p", "u", "glsBevelMax", scalarBody("glsShapeDistance"));
+  const faces = [
+    [1, [0.8660254, 0], [1, 0]],
+    [1, [0.4330127, 0.75], [0.5, 0.8660254]],
+    [2, [0, 0.65], [0, 1]],
+    [2, [0.65, 0], [1 / 1.077033, -0.4 / 1.077033]],
+    [3, [0, 0.65], [0, 1]],
+    [3, [0.565, 0], [1 / 1.044031, 0.3 / 1.044031]],
+  ];
+  for (const [shape, point, normal] of faces) {
+    for (const depth of [-0.03, 0, 0.03]) {
+      const p = { x: point[0] + normal[0] * depth, y: point[1] + normal[1] * depth };
+      const distance = shapeField(p, { shape: { x: shape } }, bevelMax);
+      assert.ok(Math.abs(distance - (1 + depth)) < 0.000001, "Polygon shell thickness differs by face");
+    }
+  }
+
+  // Regular polygons retain equal glass thickness on every face orientation.
+  for (const [shape, sides] of [[4, 3], [5, 5], [6, 6], [7, 8]]) {
+    const apothem = 0.9 * Math.cos(Math.PI / sides);
+    for (let side = 0; side < sides; side++) {
+      const angle = Math.PI / 2 + Math.PI / sides + side * 2 * Math.PI / sides;
+      for (const depth of [-0.03, 0, 0.03]) {
+        const p = { x: Math.cos(angle) * (apothem + depth), y: Math.sin(angle) * (apothem + depth) };
+        assert.ok(Math.abs(shapeField(p, { shape: { x: shape } }, bevelMax) - (1 + depth)) < 0.000001);
+      }
+    }
+    assert.ok(shapeField({ x: 0, y: 0 }, { shape: { x: shape } }, bevelMax) < 1, "Polygon center must be inside");
+    assert.ok(shapeField({ x: 0, y: 1.1 }, { shape: { x: shape } }, bevelMax) > 1, "Polygon must fit within preview");
+  }
+
+  const sacredBody = scalarBody("glsSacredDistance").replace(/\bvar\b/g, "let").replace(/\bmin\(/g, "Math.min(");
+  const segmentBody = scalarBody("glsSacredSegment").replace(/\bclamp\(/g, "clamp(");
+  const clamp = (value, low, high) => Math.max(low, Math.min(high, value));
+  const segment = new Function("p", "ax", "ay", "bx", "by", "clamp", segmentBody);
+  const sacred = new Function("p", "u", "glsSacredSegment", sacredBody);
+  const segmentAt = (...args) => segment(...args, clamp);
+  for (const shape of [8, 9, 11]) {
+    assert.ok(sacred({ x: 0, y: 0 }, { shape: { x: shape } }, segmentAt) < 0, "Emblem intersections must be filled");
+    assert.ok(sacred({ x: 1.2, y: 1.2 }, { shape: { x: shape } }, segmentAt) > 0, "Sacred emblems must fit within preview");
+    for (let index = 0; index < 30; index++) {
+      const p = { x: Math.sin(index) * 0.9, y: Math.cos(index * 1.3) * 0.9 };
+      assert.ok(Number.isFinite(sacred(p, { shape: { x: shape } }, segmentAt)));
+    }
+  }
+  assert.equal((sacredBody.match(/glsSacredSegment\(/g) ?? []).length, 78, "Metatron must connect every pair of its 13 points");
+  assert.equal((sacredBody.match(/Math\.abs\(Math\.sqrt\(/g) ?? []).length, 39, "Flower, Seed and Metatron must contain 19, 7 and 13 circles");
+  assert.ok(shapeField({ x: 0, y: 0 }, { shape: { x: 10 } }, bevelMax) < 1);
+  assert.ok(shapeField({ x: 0.5, y: 0 }, { shape: { x: 10 } }, bevelMax) > 1);
+
+  for (const [shape, index] of Object.entries(presets.shapeIndexes)) {
+    const params = { ...presets.effectDefaults, shape };
+    assert.equal(uniforms.createOrbUniformSnapshot(params)[136], index);
+    const configuration = orbStates.createOrbStateConfiguration(params);
+    const web = createWebExport(configuration, "thinking");
+    const swift = createSwiftExport(configuration, "thinking");
+    assert.ok(web.includes("glsShapeDistance"));
+    assert.ok(swift.includes("glsShapeDistance"));
+  }
+
+  const legacyConfiguration = orbStates.createOrbStateConfiguration(presets.effectDefaults);
+  for (const key of ["auraEnabled", "auraAudioEnabled", "auraIntensity", "auraSize", "auraSpeed", "auraColor", "auraColorB", "auraColorC", "auraEffect", "shape"]) {
+    delete legacyConfiguration.shared[key];
+  }
+  legacyConfiguration.shared.radius = 0.81;
+  legacyConfiguration.shared.auraSize = undefined;
+  legacyConfiguration.profiles.thinking.speed = 1.23;
+  for (const state of ["idle", "thinking"]) {
+    const params = orbStates.resolveOrbStateParams(legacyConfiguration, state);
+    assert.equal(params.radius, 0.81, "Existing user settings must survive migration");
+    for (const key of ["auraEnabled", "auraAudioEnabled", "auraIntensity", "auraSize", "auraSpeed", "auraColor", "auraColorB", "auraColorC", "auraEffect", "shape"]) {
+      assert.equal(params[key], presets.effectDefaults[key], `Missing ${key} must use its default`);
+    }
+    assert.ok(uniforms.createOrbUniformSnapshot(params).every(Number.isFinite), "Old configurations must produce valid GPU uniforms");
+  }
+  assert.equal(orbStates.resolveOrbStateParams(legacyConfiguration, "thinking").speed, 1.23);
+  assert.doesNotThrow(() => createWebExport(legacyConfiguration, "thinking"));
+  assert.doesNotThrow(() => createSwiftExport(legacyConfiguration, "thinking"));
+
+  assert.equal(uniforms.createOrbUniformSnapshot(presets.effectDefaults)[140], 0, "Aura is disabled by default");
+  for (const shape of Object.keys(presets.shapeIndexes)) {
+    const params = { ...presets.effectDefaults, shape, auraEnabled: true, auraIntensity: 0.8, auraSize: 0.3, auraSpeed: 0, auraColor: "#FF8000", auraColorB: "#0040FF", auraColorC: "#00FF80", auraEffect: "spiral" };
+    const config = orbStates.createOrbStateConfiguration(params);
+    for (const state of ["idle", "thinking"]) {
+      const snapshot = uniforms.createOrbUniformSnapshot(orbStates.resolveOrbStateParams(config, state));
+      assert.deepEqual(snapshot.slice(140, 144), Array.from(new Float32Array([1, 0.8, 0.3, 0])));
+      assert.deepEqual(snapshot.slice(144, 148), Array.from(new Float32Array([1, 128 / 255, 0, 1])));
+      assert.deepEqual(snapshot.slice(148, 152), Array.from(new Float32Array([0, 64 / 255, 1, 1])));
+      assert.deepEqual(snapshot.slice(156, 160), Array.from(new Float32Array([0, 1, 128 / 255, 1])));
+      assert.equal(snapshot[160], 3);
+      assert.deepEqual(parseSwiftSeed(createSwiftExport(config, state), state), snapshot, "Aura settings must survive Swift export");
+      assert.ok(createWebExport(config, state).includes(JSON.stringify(snapshot)), "Aura settings must survive Web export");
+    }
+  }
+  const starfield = await server.ssrLoadModule("/src/starfield.tsx");
+  assert.equal(starfield.createStars(140).length, 140);
+  assert.deepEqual(starfield.createStars(140), starfield.createStars(140), "Star positions must remain stable");
+  assert.deepEqual(starfield.createStars(140).slice(0, 20), starfield.createStars(20), "Changing density must retain existing stars");
+  const starsConfig = orbStates.createOrbStateConfiguration({ ...presets.effectDefaults, starsEnabled: true, starsDensity: 60, starsBrightness: 0.7 });
+  const starsWeb = createWebExport(starsConfig, "thinking");
+  assert.equal((starsWeb.match(/class="orb-star"/g) ?? []).length, 60);
+  assert.ok(createSwiftExport(starsConfig, "thinking").includes("let stars:"));
+  assert.ok(starfield.starfieldStyles.includes("prefers-reduced-motion"));
+
+  const padded = new Float32Array(uniforms.orbUniformFloatCount);
+  uniforms.writeOrbUniforms(padded, 1600, 1200, 0, presets.effectDefaults, 2);
+  assert.equal(padded[164], 2, "Padded canvas must preserve logical figure size");
+  assert.equal(Math.min(padded[0], padded[1]) / padded[164], 600);
+  assert.equal(uniforms.createOrbUniformSnapshot(presets.effectDefaults)[164], 1, "Exports use their actual viewport");
+
+  for (const [auraEffect, index] of Object.entries(presets.auraEffectIndexes)) {
+    const config = orbStates.createOrbStateConfiguration({ ...presets.effectDefaults, auraEnabled: true, auraEffect });
+    for (const state of ["idle", "thinking"]) {
+      const snapshot = uniforms.createOrbUniformSnapshot(orbStates.resolveOrbStateParams(config, state));
+      assert.equal(snapshot[160], index);
+      assert.deepEqual(parseSwiftSeed(createSwiftExport(config, state), state), snapshot);
+      assert.ok(createWebExport(config, state).includes(JSON.stringify(snapshot)));
+    }
+  }
+
+  assert.match(wgsl, /fn glsAuraBehind\(/);
+  assert.match(metal, /metal::float4 glsAuraBehind\(/);
+  assert.match(appSource, /search\.set\("aura", params\.auraEnabled/);
+  assert.match(appSource, /search\.get\("aura"\) === "1"/);
 
   function parseSwiftSeed(code, state) {
     const name = state === "idle" ? "Idle" : "Thinking";
@@ -376,7 +509,7 @@ try {
       );
       assert.match(
         shaderModule.orbShaderSource,
-        /fn ribbon_composite_fs_main\([\s\S]*?refractedP = p - normal \* refractionAmount/,
+        /fn ribbonColor\([\s\S]*?refractedP = p - normal \* refractionAmount/,
         "WGSL 玻璃复合入口未使用法线折射",
       );
       assert.match(
@@ -399,7 +532,7 @@ try {
       );
       assert.match(
         metal,
-        /fragment ribbon_composite_fs_mainOutput ribbon_composite_fs_main\([\s\S]*?refractedP = p - normal \* refractionAmount/,
+        /ribbon_composite_fs_mainOutput ribbonColor\([\s\S]*?refractedP = p - normal \* refractionAmount/,
         "Metal 玻璃复合入口未使用法线折射",
       );
       assert.match(

@@ -76,6 +76,10 @@ type IdleStyleProfile = {
 };
 
 const idleProfilesByStyle: Record<StyleName, IdleStyleProfile> = {
+  galaxyCore: { numeric: { speed: { scale: 0.3 }, warp: { scale: 0.65 }, zoom: { scale: 0.85 }, ridgeAmt: { scale: 0.5 }, sharp: { scale: 0.8 }, exposure: { scale: 0.72 } }, colors: { colorA: "#040617", colorB: "#362B89", colorC: "#9544A2", colorD: "#6BAFBF", highlightColor: "#CADBE8", glowColor: "#493AB7" } },
+  mysticMist: { numeric: { speed: { scale: 0.3 }, warp: { scale: 0.65 }, zoom: { scale: 0.85 }, ridgeAmt: { scale: 0.5 }, sharp: { scale: 0.8 }, exposure: { scale: 0.72 } }, colors: { colorA: "#051419", colorB: "#184D56", colorC: "#4A8886", colorD: "#A5BAAE", highlightColor: "#CADBE8", glowColor: "#216773" } },
+  crystalLight: { numeric: { speed: { scale: 0.3 }, warp: { scale: 0.65 }, zoom: { scale: 0.85 }, ridgeAmt: { scale: 0.5 }, sharp: { scale: 0.8 }, exposure: { scale: 0.72 } }, colors: { colorA: "#061221", colorB: "#183F79", colorC: "#3FA2B2", colorD: "#B6BCBF", highlightColor: "#CADBE8", glowColor: "#2155A2" } },
+
   siri: {
     numeric: {
       speed: { scale: 0.3 },
@@ -339,8 +343,14 @@ export function resolveOrbStateParams(
   configuration: OrbStateConfiguration,
   state: OrbStateName,
 ): OrbParams {
+  // Hot reload can preserve configurations created before new controls existed.
+  // Fill missing fields from the material defaults without replacing user edits.
+  const shared = Object.fromEntries(
+    Object.entries(configuration.shared).filter(([, value]) => value !== undefined),
+  ) as OrbSharedParams;
   return {
-    ...configuration.shared,
+    ...stylePresets[shared.style],
+    ...shared,
     ...configuration.profiles[state],
   };
 }

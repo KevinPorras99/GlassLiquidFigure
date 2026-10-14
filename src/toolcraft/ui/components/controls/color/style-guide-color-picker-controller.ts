@@ -218,13 +218,13 @@ function useColorValueHandlers(
 
 export function useColorPickerController({
   value,
-  channelLabel = "通道",
-  cssColorValueLabel = "CSS 颜色值",
+  channelLabel = "Channel",
+  cssColorValueLabel = "CSS color value",
   disabled = false,
   hexInputId,
-  hexInputLabel = "十六进制颜色",
-  surfaceLabel = "颜色饱和度和亮度",
-  hueLabel = "色相",
+  hexInputLabel = "Hex color",
+  surfaceLabel = "Color saturation and brightness",
+  hueLabel = "Hue",
   showOpacity = false,
   surfaceClassName,
   onChange,

@@ -74,7 +74,7 @@ export function ColorPickerPopover({
   return (
     <Popover onOpenChange={handleOpenChange} open={open}>
       <PopoverTrigger
-        aria-label={ariaLabel ?? `选择${label}`}
+        aria-label={ariaLabel ?? `Select ${label}`}
         className={cn(
           "group/button inline-flex shrink-0 cursor-pointer items-center justify-center rounded-lg border font-medium whitespace-nowrap transition-colors outline-none select-none focus-visible:border-[color:var(--ring)] focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--ring)_30%,transparent)]",
           "border-[color:color-mix(in_oklab,var(--border)_12%,transparent)] bg-[color:color-mix(in_oklab,var(--input)_5%,transparent)]",

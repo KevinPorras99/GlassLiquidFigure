@@ -1,6 +1,6 @@
-import { type OrbParams, styleFlowIndexes } from "./presets";
+import { type OrbParams, styleFlowIndexes, shapeIndexes, auraEffectIndexes } from "./presets";
 
-export const orbUniformFloatCount = 136;
+export const orbUniformFloatCount = 168;
 export const orbColorOffset = 40;
 export const orbCanvasColorOffset = orbColorOffset + 10 * 4;
 
@@ -36,11 +36,22 @@ export function writeOrbUniforms(
   height: number,
   time: number,
   params: OrbParams,
+  renderScale = 1,
 ): void {
   target.fill(0);
   target[0] = width;
   target[1] = height;
   target[2] = time;
+  target[164] = Math.max(1, renderScale);
+  target[165] = params.asciiEnabled ? 1 : 0;
+  target[166] = params.asciiSize;
+  target[136] = shapeIndexes[params.shape] ?? 0;
+  target.set([params.auraEnabled ? 1 : 0, params.auraIntensity, params.auraSize, params.auraSpeed], 140);
+  target.set(rgb(params.auraColor), 144);
+  target.set(rgb(params.auraColorB), 148);
+  target.set(rgb(params.auraColorC), 156);
+  target[160] = auraEffectIndexes[params.auraEffect] ?? 0;
+  target[161] = params.auraAudioEnabled ? 1 : 0;
 
   target.set(
     [

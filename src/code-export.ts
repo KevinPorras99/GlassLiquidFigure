@@ -1,3 +1,4 @@
+import { createStars, createStarfieldMarkup, starfieldStyles } from "./starfield";
 import orbMetalSource from "../effect.metal?raw";
 import { createOrbUniformSnapshot, orbColorOffset } from "./orb-uniforms";
 import { particleRibbonInstanceCount } from "./particle-ribbon";
@@ -8,7 +9,7 @@ import {
   type OrbStateName,
 } from "./orb-states";
 import { orbShaderSource } from "./shader-source";
-import { audioRules, audioFlowStrengths } from "./orb-audio";
+import { audioRules, auraAudioRules, audioFlowStrengths } from "./orb-audio";
 
 function formatSwiftFloats(values: number[]): string {
   const rows: string[] = [];
@@ -42,11 +43,13 @@ export function createWebExport(
   <style>
     html, body, canvas { width: 100%; height: 100%; margin: 0; }
     body { overflow: hidden; background: ${configuration.shared.canvasColor}; }
-    canvas { display: block; }
+    canvas { display: block; position: relative; }
+    ${starfieldStyles}
     #status { position: fixed; inset: 0; display: grid; place-items: center; color: white; font: 14px system-ui; }
   </style>
 </head>
 <body>
+  ${configuration.shared.starsEnabled ? createStarfieldMarkup(configuration.shared.starsDensity, configuration.shared.starsBrightness) : ""}
   <canvas id="orb" aria-label="Animated liquid glass orb"></canvas>
   <div id="status" hidden></div>
   <script type="module">
@@ -72,10 +75,22 @@ export function createWebExport(
     let lastFrameAt = null;
     let motionPhase = 0;
     const audioRules = ${JSON.stringify(audioRules)};
+    const auraAudioRules = ${JSON.stringify(auraAudioRules)};
     const audioFlowStrengths = ${JSON.stringify(audioFlowStrengths)};
     function applyAudioUniforms(values, bands) {
       const strength = audioFlowStrengths[Math.round(values[15])] ?? 0;
+      values.fill(0, 152, 156);
+      if (values[140] > 0.5 && values[161] > 0.5) {
+        for (const [index, band, additive, proportional, ceiling] of auraAudioRules) {
+          const input = bands[band];
+          const level = Number.isFinite(input) ? Math.max(0, Math.min(1, input)) : 0;
+          if (!level) continue;
+          values[index] = Math.min(Math.max(ceiling, values[index]), values[index] * (1 + proportional * level) + additive * level);
+        }
+      }
       if (!strength) return;
+      const safeBand = value => (Number.isFinite(value) ? Math.max(0, Math.min(1, value)) : 0) * strength;
+      values.set([safeBand(bands.low), safeBand(bands.mid), safeBand(bands.high), safeBand(bands.all)], 152);
       for (const [index, band, additive, proportional, ceiling] of audioRules) {
         const input = bands[band];
         const level = (Number.isFinite(input) ? Math.max(0, Math.min(1, input)) : 0) * strength;
@@ -119,7 +134,7 @@ export function createWebExport(
     function sampleTransition(now) {
       const progress = transitionProgress(now);
       for (let index = 3; index < displayedUniforms.length; index += 1) {
-        const colorComponent = index >= ${orbColorOffset}
+        const colorComponent = (index >= ${orbColorOffset} && index < 136 || index >= 144 && index < 152 || index >= 156 && index < 160)
           && (index - ${orbColorOffset}) % 4 < 3;
         displayedUniforms[index] = colorComponent
           ? mixSrgb(fromUniforms[index], targetUniforms[index], progress)
@@ -416,8 +431,15 @@ public struct LiquidOrbAudio: Sendable {
 
 private func applyOrbAudio(_ values: inout [Float], _ bands: LiquidOrbAudio) {
     let strengths: [Int: Float] = [${Object.entries(audioFlowStrengths).map(([key, value]) => `${key}: ${value}`).join(", ")}]
+    for index in 152..<156 { values[index] = 0 }
+    if values[140] > 0.5 && values[161] > 0.5 {
+        func auraLevel(_ value: Float) -> Float { value.isFinite ? max(0, min(1, value)) : 0 }
+${auraAudioRules.map(([index, band, additive, proportional, ceiling]) => `        if auraLevel(bands.${band}) > 0 { values[${index}] = min(max(${ceiling}, values[${index}]), values[${index}] * (1 + ${proportional} * auraLevel(bands.${band})) + ${additive} * auraLevel(bands.${band})) }`).join("\n")}
+    }
     guard let strength = strengths[Int(values[15].rounded())] else { return }
     func level(_ value: Float) -> Float { value.isFinite ? max(0, min(1, value)) * strength : 0 }
+    values[152] = level(bands.low); values[153] = level(bands.mid)
+    values[154] = level(bands.high); values[155] = level(bands.all)
 ${audioRules.map(([index, band, additive, proportional, ceiling]) => `    if level(bands.${band}) > 0 { values[${index}] = min(max(${ceiling}, values[${index}]), values[${index}] * (1 + ${proportional} * level(bands.${band})) + ${additive} * level(bands.${band})) }`).join("\n")}
 }
 
@@ -594,7 +616,7 @@ private final class LiquidOrbRenderer: NSObject, MTKViewDelegate {
         let progress = Float(easedProgress)
 
         for index in 3..<displayedUniforms.count {
-            let isColorComponent = index >= ${orbColorOffset}
+            let isColorComponent = (index >= ${orbColorOffset} && index < 136 || index >= 144 && index < 152 || index >= 156 && index < 160)
                 && (index - ${orbColorOffset}) % 4 < 3
             displayedUniforms[index] = isColorComponent
                 ? orbMixSrgb(fromUniforms[index], targetUniforms[index], progress)
@@ -734,6 +756,7 @@ private struct LiquidOrbSurface: NSViewRepresentable {
 #endif
 
 public struct LiquidOrbView: View {
+    @Environment(\\.accessibilityReduceMotion) private var reduceMotion
     private let state: LiquidOrbState
     private var audio = LiquidOrbAudio()
 
@@ -748,6 +771,22 @@ public struct LiquidOrbView: View {
 
     public var body: some View {
         LiquidOrbSurface(state: state, audio: audio)
+${configuration.shared.starsEnabled ? `            .background {
+                TimelineView(.animation(minimumInterval: 0.1)) { timeline in
+                    Canvas { context, size in
+                        let time = timeline.date.timeIntervalSinceReferenceDate
+                        let stars: [(Double, Double, Double, Double, Double, Double)] = [
+${createStars(configuration.shared.starsDensity).map(star => `                            (${star.x / 100}, ${star.y / 100}, ${star.size}, ${star.opacity * configuration.shared.starsBrightness}, ${star.duration}, ${star.delay}),`).join("\n")}
+                        ]
+                        for star in stars {
+                            let rect = CGRect(x: size.width * CGFloat(star.0), y: size.height * CGFloat(star.1), width: CGFloat(star.2), height: CGFloat(star.2))
+                            let brightness = reduceMotion ? star.3 : star.3 * (0.7 + 0.3 * cos((time + star.5) / star.4 * 6.2831853))
+                            context.fill(Path(ellipseIn: rect), with: .color(Color(red: 0.875, green: 0.918, blue: 1).opacity(brightness)))
+                        }
+                    }
+                    .accessibilityHidden(true)
+                }
+            }` : ""}
     }
 }`;
 }

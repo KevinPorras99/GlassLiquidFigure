@@ -60,7 +60,7 @@ export function ColorOpacityInput({
   return (
     <InputGroup className="w-14 flex-none rounded-l-none [&:not(:focus-within):hover]:!border-[color:color-mix(in_oklab,var(--border)_20%,transparent)] [&:not(:focus-within):hover]:text-[color:var(--foreground)]">
       <InputGroupInput
-        aria-label={`${label}不透明度`}
+        aria-label={`${label} opacity`}
         autoComplete="off"
         className="pl-2 pr-1 text-right font-mono"
         inputMode="numeric"

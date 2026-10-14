@@ -7,7 +7,7 @@ import "./styles.css";
 const rootElement = document.querySelector<HTMLDivElement>("#root");
 
 if (!rootElement) {
-  throw new Error("找不到应用挂载节点");
+  throw new Error("Application root element not found");
 }
 
 createRoot(rootElement).render(

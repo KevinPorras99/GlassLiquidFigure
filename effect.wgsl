@@ -119,8 +119,21 @@ struct Uniforms {
   paletteStop9:    vec4<f32>,
   paletteStop10:   vec4<f32>,
   paletteStop11:   vec4<f32>,
+  shape: vec4<f32>,
+  aura: vec4<f32>,
+  auraColor: vec4<f32>,
+  auraColorB: vec4<f32>,
+  audioBands: vec4<f32>,
+  auraColorC: vec4<f32>,
+  auraEffect: vec4<f32>,
+  renderViewport: vec4<f32>,
 };
 @group(0) @binding(0) var<uniform> u: Uniforms;
+
+// Logical figure size stays fixed when the canvas includes extra aura space.
+fn glsRenderMinSize() -> f32 {
+  return max(min(u.size.x, u.size.y) / max(u.renderViewport.x, 1.0), 1.0);
+}
 
 // ── The Orbs edge bank (WGSL) ───────────────────────────────────────────────
 // Two knobs every orb on the shelf carries: how soft its limb is, and how far
@@ -897,7 +910,57 @@ fn glsParticleRibbonFluid(p: vec2<f32>, t: f32) -> vec3<f32> {
   return vec3<f32>(0.0);
 }
 
-fn glsPresetFluid(p: vec2<f32>, style: i32, t: f32) -> vec3<f32> {
+// Real band energy sets vibration amplitude; silence leaves the material intact.
+fn glsAudioWave(x: f32, t: f32) -> f32 {
+  let envelope = pow(max(1.0 - x * x, 0.0), 0.75);
+  let bass = u.audioBands.x * 0.24 * sin(x * 7.0 - t * 9.0);
+  let mids = u.audioBands.y * 0.14 * sin(x * 18.0 - t * 17.0 + 0.8);
+  let treble = u.audioBands.z * 0.065 * sin(x * 38.0 - t * 29.0 + 1.7);
+  return envelope * (bass + mids + treble);
+}
+
+fn glsGalaxyCoreFluid(p: vec2<f32>, t: f32) -> vec3<f32> {
+  let r: f32 = length(p);
+  let angle: f32 = atan2(p.y, p.x) + r * (5.0 + u.warp) - t * 0.28;
+  let q: vec2<f32> = glsRotate(p, -t * 0.08);
+  let dust: f32 = lqFbm(q * (4.0 + u.zoom * 3.0), 0.015).x;
+  let arm: f32 = pow(0.5 + 0.5 * sin(angle * 3.0 + dust * u.ridgeAmt * 3.0), 3.0);
+  let halo: f32 = exp(-r * r * 3.0);
+  let cell: vec2<f32> = q * 38.0;
+  let sparkle: f32 = pow(lqHash(floor(cell)), 32.0) * exp(-dot(fract(cell) - vec2<f32>(0.5), fract(cell) - vec2<f32>(0.5)) * 65.0);
+  let value: f32 = clamp(arm * halo * 0.7 + dust * halo * 0.25, 0.0, 1.0);
+  var color: vec3<f32> = lqRamp(value, u.colorA.rgb, u.colorB.rgb, u.colorC.rgb, u.colorD.rgb);
+  color = color + u.colorD.rgb * (exp(-r * r * 90.0) * 0.65 + sparkle * (0.35 + arm));
+  return glsFinishPresetFluid(color, p);
+}
+
+fn glsMysticMistFluid(p: vec2<f32>, t: f32) -> vec3<f32> {
+  let q: vec2<f32> = p * (1.35 + u.zoom) + vec2<f32>(t * 0.035, -t * 0.06);
+  let drift: vec2<f32> = lqFbm(q * 1.4, 0.025);
+  let front: f32 = lqFbm(q + (drift - vec2<f32>(0.5)) * u.warp * 0.5, 0.028).x;
+  let back: f32 = lqFbm(glsRotate(q, 1.2) * 1.75 + vec2<f32>(-t * 0.08, 2.3), 0.032).x;
+  let density: f32 = smoothstep(0.22, 0.8, front * 0.65 + back * 0.35);
+  let depth: f32 = sqrt(max(1.0 - dot(p, p), 0.0));
+  let value: f32 = clamp(density * (0.55 + 0.45 * depth), 0.0, 1.0);
+  var color: vec3<f32> = lqRamp(value, u.colorA.rgb, u.colorB.rgb, u.colorC.rgb, u.colorD.rgb);
+  color = color + u.highlightColor.rgb * pow(density, 5.0) * u.ridgeAmt * 0.16;
+  return glsFinishPresetFluid(color, p);
+}
+
+fn glsCrystalLightFluid(p: vec2<f32>, t: f32) -> vec3<f32> {
+  let q: vec2<f32> = glsRotate(p, 0.2 * sin(t * 0.12)) * (3.0 + u.zoom * 3.0);
+  let bend: f32 = lqFbm(q * 0.75 + vec2<f32>(t * 0.04, -t * 0.055), 0.018).x;
+  let a: f32 = sin(q.x * 2.2 + q.y * 1.1 + bend * u.warp + t * 0.28);
+  let b: f32 = sin(q.y * 2.4 - q.x * 0.8 - bend * u.warp + t * 0.19);
+  let caustic: f32 = pow(max(1.0 - abs(a * b), 0.0), 9.0 + u.sharp * 2.0);
+  let value: f32 = clamp(0.12 + bend * 0.34 + caustic * 0.5, 0.0, 1.0);
+  var color: vec3<f32> = lqRamp(value, u.colorA.rgb, u.colorB.rgb, u.colorC.rgb, u.colorD.rgb);
+  color = color + u.highlightColor.rgb * caustic * (0.15 + u.ridgeAmt * 0.35);
+  return glsFinishPresetFluid(color, p);
+}
+
+fn glsPresetFluid(pIn: vec2<f32>, style: i32, t: f32) -> vec3<f32> {
+  let p = pIn - vec2<f32>(0.0, glsAudioWave(pIn.x, t));
   if (style == 9) { return glsSiriFluid(p, t); }
   if (style == 10) { return glsAuroraFluid(p, t); }
   if (style == 11) { return glsPlasmaFluid(p, t); }
@@ -910,6 +973,9 @@ fn glsPresetFluid(p: vec2<f32>, style: i32, t: f32) -> vec3<f32> {
   if (style == 21) { return glsVioletEmberFluid(p, t); }
   if (style == 22) { return glsChromaticMetalFluid(p, t); }
   if (style == 23) { return glsRefractiveBlobFluid(p, t); }
+  if (style == 25) { return glsGalaxyCoreFluid(p, t); }
+  if (style == 26) { return glsMysticMistFluid(p, t); }
+  if (style == 27) { return glsCrystalLightFluid(p, t); }
   if (style == 24) { return glsParticleRibbonFluid(p, t); }
   return glsFrostFluid(p, t);
 }
@@ -1051,7 +1117,434 @@ fn glsContourScale(uv: vec2<f32>, t: f32, amount: f32) -> f32 {
   return 1.0 + clamp(amount, 0.0, 1.0) * glsContourStrength() * contour.x;
 }
 
+// Smooth intersections keep a small bevel at polygon corners.
+fn glsBevelMax(a: f32, b: f32) -> f32 {
+  let h = max(0.025 - abs(a - b), 0.0) / 0.025;
+  return max(a, b) + h * h * 0.00625;
+}
+
+fn glsSacredSegment(p: vec2<f32>, ax: f32, ay: f32, bx: f32, by: f32) -> f32 {
+  let dx = bx - ax;
+  let dy = by - ay;
+  let h = clamp(((p.x - ax) * dx + (p.y - ay) * dy) / max(dx * dx + dy * dy, 0.00001), 0.0, 1.0);
+  let x = p.x - ax - dx * h;
+  let y = p.y - ay - dy * h;
+  return sqrt(x * x + y * y);
+}
+
+fn glsSacredDistance(p: vec2<f32>) -> f32 {
+  var distance = 10.0;
+  if (u.shape.x > 7.5 && u.shape.x < 8.5) {
+    distance = min(distance, abs(sqrt((p.x - -0.500000000) * (p.x - -0.500000000) + (p.y - 0.000000000) * (p.y - 0.000000000)) - 0.250000000));
+    distance = min(distance, abs(sqrt((p.x - -0.375000000) * (p.x - -0.375000000) + (p.y - 0.216506351) * (p.y - 0.216506351)) - 0.250000000));
+    distance = min(distance, abs(sqrt((p.x - -0.250000000) * (p.x - -0.250000000) + (p.y - 0.433012702) * (p.y - 0.433012702)) - 0.250000000));
+    distance = min(distance, abs(sqrt((p.x - -0.375000000) * (p.x - -0.375000000) + (p.y - -0.216506351) * (p.y - -0.216506351)) - 0.250000000));
+    distance = min(distance, abs(sqrt((p.x - -0.250000000) * (p.x - -0.250000000) + (p.y - 0.000000000) * (p.y - 0.000000000)) - 0.250000000));
+    distance = min(distance, abs(sqrt((p.x - -0.125000000) * (p.x - -0.125000000) + (p.y - 0.216506351) * (p.y - 0.216506351)) - 0.250000000));
+    distance = min(distance, abs(sqrt((p.x - 0.000000000) * (p.x - 0.000000000) + (p.y - 0.433012702) * (p.y - 0.433012702)) - 0.250000000));
+    distance = min(distance, abs(sqrt((p.x - -0.250000000) * (p.x - -0.250000000) + (p.y - -0.433012702) * (p.y - -0.433012702)) - 0.250000000));
+    distance = min(distance, abs(sqrt((p.x - -0.125000000) * (p.x - -0.125000000) + (p.y - -0.216506351) * (p.y - -0.216506351)) - 0.250000000));
+    distance = min(distance, abs(sqrt((p.x - 0.000000000) * (p.x - 0.000000000) + (p.y - 0.000000000) * (p.y - 0.000000000)) - 0.250000000));
+    distance = min(distance, abs(sqrt((p.x - 0.125000000) * (p.x - 0.125000000) + (p.y - 0.216506351) * (p.y - 0.216506351)) - 0.250000000));
+    distance = min(distance, abs(sqrt((p.x - 0.250000000) * (p.x - 0.250000000) + (p.y - 0.433012702) * (p.y - 0.433012702)) - 0.250000000));
+    distance = min(distance, abs(sqrt((p.x - 0.000000000) * (p.x - 0.000000000) + (p.y - -0.433012702) * (p.y - -0.433012702)) - 0.250000000));
+    distance = min(distance, abs(sqrt((p.x - 0.125000000) * (p.x - 0.125000000) + (p.y - -0.216506351) * (p.y - -0.216506351)) - 0.250000000));
+    distance = min(distance, abs(sqrt((p.x - 0.250000000) * (p.x - 0.250000000) + (p.y - 0.000000000) * (p.y - 0.000000000)) - 0.250000000));
+    distance = min(distance, abs(sqrt((p.x - 0.375000000) * (p.x - 0.375000000) + (p.y - 0.216506351) * (p.y - 0.216506351)) - 0.250000000));
+    distance = min(distance, abs(sqrt((p.x - 0.250000000) * (p.x - 0.250000000) + (p.y - -0.433012702) * (p.y - -0.433012702)) - 0.250000000));
+    distance = min(distance, abs(sqrt((p.x - 0.375000000) * (p.x - 0.375000000) + (p.y - -0.216506351) * (p.y - -0.216506351)) - 0.250000000));
+    distance = min(distance, abs(sqrt((p.x - 0.500000000) * (p.x - 0.500000000) + (p.y - 0.000000000) * (p.y - 0.000000000)) - 0.250000000));
+  }
+  if (u.shape.x > 8.5 && u.shape.x < 9.5) {
+    distance = min(distance, abs(sqrt((p.x - 0.000000000) * (p.x - 0.000000000) + (p.y - 0.000000000) * (p.y - 0.000000000)) - 0.360000000));
+    distance = min(distance, abs(sqrt((p.x - 0.360000000) * (p.x - 0.360000000) + (p.y - 0.000000000) * (p.y - 0.000000000)) - 0.360000000));
+    distance = min(distance, abs(sqrt((p.x - 0.180000000) * (p.x - 0.180000000) + (p.y - 0.311769145) * (p.y - 0.311769145)) - 0.360000000));
+    distance = min(distance, abs(sqrt((p.x - -0.180000000) * (p.x - -0.180000000) + (p.y - 0.311769145) * (p.y - 0.311769145)) - 0.360000000));
+    distance = min(distance, abs(sqrt((p.x - -0.360000000) * (p.x - -0.360000000) + (p.y - 0.000000000) * (p.y - 0.000000000)) - 0.360000000));
+    distance = min(distance, abs(sqrt((p.x - -0.180000000) * (p.x - -0.180000000) + (p.y - -0.311769145) * (p.y - -0.311769145)) - 0.360000000));
+    distance = min(distance, abs(sqrt((p.x - 0.180000000) * (p.x - 0.180000000) + (p.y - -0.311769145) * (p.y - -0.311769145)) - 0.360000000));
+  }
+  if (u.shape.x > 10.5 && u.shape.x < 11.5) {
+    distance = min(distance, abs(sqrt((p.x - 0.000000000) * (p.x - 0.000000000) + (p.y - 0.000000000) * (p.y - 0.000000000)) - 0.160000000));
+    distance = min(distance, abs(sqrt((p.x - 0.320000000) * (p.x - 0.320000000) + (p.y - 0.000000000) * (p.y - 0.000000000)) - 0.160000000));
+    distance = min(distance, abs(sqrt((p.x - 0.160000000) * (p.x - 0.160000000) + (p.y - 0.277128129) * (p.y - 0.277128129)) - 0.160000000));
+    distance = min(distance, abs(sqrt((p.x - -0.160000000) * (p.x - -0.160000000) + (p.y - 0.277128129) * (p.y - 0.277128129)) - 0.160000000));
+    distance = min(distance, abs(sqrt((p.x - -0.320000000) * (p.x - -0.320000000) + (p.y - 0.000000000) * (p.y - 0.000000000)) - 0.160000000));
+    distance = min(distance, abs(sqrt((p.x - -0.160000000) * (p.x - -0.160000000) + (p.y - -0.277128129) * (p.y - -0.277128129)) - 0.160000000));
+    distance = min(distance, abs(sqrt((p.x - 0.160000000) * (p.x - 0.160000000) + (p.y - -0.277128129) * (p.y - -0.277128129)) - 0.160000000));
+    distance = min(distance, abs(sqrt((p.x - 0.640000000) * (p.x - 0.640000000) + (p.y - 0.000000000) * (p.y - 0.000000000)) - 0.160000000));
+    distance = min(distance, abs(sqrt((p.x - 0.320000000) * (p.x - 0.320000000) + (p.y - 0.554256258) * (p.y - 0.554256258)) - 0.160000000));
+    distance = min(distance, abs(sqrt((p.x - -0.320000000) * (p.x - -0.320000000) + (p.y - 0.554256258) * (p.y - 0.554256258)) - 0.160000000));
+    distance = min(distance, abs(sqrt((p.x - -0.640000000) * (p.x - -0.640000000) + (p.y - 0.000000000) * (p.y - 0.000000000)) - 0.160000000));
+    distance = min(distance, abs(sqrt((p.x - -0.320000000) * (p.x - -0.320000000) + (p.y - -0.554256258) * (p.y - -0.554256258)) - 0.160000000));
+    distance = min(distance, abs(sqrt((p.x - 0.320000000) * (p.x - 0.320000000) + (p.y - -0.554256258) * (p.y - -0.554256258)) - 0.160000000));
+    distance = min(distance, glsSacredSegment(p, 0.000000000, 0.000000000, 0.320000000, 0.000000000));
+    distance = min(distance, glsSacredSegment(p, 0.000000000, 0.000000000, 0.160000000, 0.277128129));
+    distance = min(distance, glsSacredSegment(p, 0.000000000, 0.000000000, -0.160000000, 0.277128129));
+    distance = min(distance, glsSacredSegment(p, 0.000000000, 0.000000000, -0.320000000, 0.000000000));
+    distance = min(distance, glsSacredSegment(p, 0.000000000, 0.000000000, -0.160000000, -0.277128129));
+    distance = min(distance, glsSacredSegment(p, 0.000000000, 0.000000000, 0.160000000, -0.277128129));
+    distance = min(distance, glsSacredSegment(p, 0.000000000, 0.000000000, 0.640000000, 0.000000000));
+    distance = min(distance, glsSacredSegment(p, 0.000000000, 0.000000000, 0.320000000, 0.554256258));
+    distance = min(distance, glsSacredSegment(p, 0.000000000, 0.000000000, -0.320000000, 0.554256258));
+    distance = min(distance, glsSacredSegment(p, 0.000000000, 0.000000000, -0.640000000, 0.000000000));
+    distance = min(distance, glsSacredSegment(p, 0.000000000, 0.000000000, -0.320000000, -0.554256258));
+    distance = min(distance, glsSacredSegment(p, 0.000000000, 0.000000000, 0.320000000, -0.554256258));
+    distance = min(distance, glsSacredSegment(p, 0.320000000, 0.000000000, 0.160000000, 0.277128129));
+    distance = min(distance, glsSacredSegment(p, 0.320000000, 0.000000000, -0.160000000, 0.277128129));
+    distance = min(distance, glsSacredSegment(p, 0.320000000, 0.000000000, -0.320000000, 0.000000000));
+    distance = min(distance, glsSacredSegment(p, 0.320000000, 0.000000000, -0.160000000, -0.277128129));
+    distance = min(distance, glsSacredSegment(p, 0.320000000, 0.000000000, 0.160000000, -0.277128129));
+    distance = min(distance, glsSacredSegment(p, 0.320000000, 0.000000000, 0.640000000, 0.000000000));
+    distance = min(distance, glsSacredSegment(p, 0.320000000, 0.000000000, 0.320000000, 0.554256258));
+    distance = min(distance, glsSacredSegment(p, 0.320000000, 0.000000000, -0.320000000, 0.554256258));
+    distance = min(distance, glsSacredSegment(p, 0.320000000, 0.000000000, -0.640000000, 0.000000000));
+    distance = min(distance, glsSacredSegment(p, 0.320000000, 0.000000000, -0.320000000, -0.554256258));
+    distance = min(distance, glsSacredSegment(p, 0.320000000, 0.000000000, 0.320000000, -0.554256258));
+    distance = min(distance, glsSacredSegment(p, 0.160000000, 0.277128129, -0.160000000, 0.277128129));
+    distance = min(distance, glsSacredSegment(p, 0.160000000, 0.277128129, -0.320000000, 0.000000000));
+    distance = min(distance, glsSacredSegment(p, 0.160000000, 0.277128129, -0.160000000, -0.277128129));
+    distance = min(distance, glsSacredSegment(p, 0.160000000, 0.277128129, 0.160000000, -0.277128129));
+    distance = min(distance, glsSacredSegment(p, 0.160000000, 0.277128129, 0.640000000, 0.000000000));
+    distance = min(distance, glsSacredSegment(p, 0.160000000, 0.277128129, 0.320000000, 0.554256258));
+    distance = min(distance, glsSacredSegment(p, 0.160000000, 0.277128129, -0.320000000, 0.554256258));
+    distance = min(distance, glsSacredSegment(p, 0.160000000, 0.277128129, -0.640000000, 0.000000000));
+    distance = min(distance, glsSacredSegment(p, 0.160000000, 0.277128129, -0.320000000, -0.554256258));
+    distance = min(distance, glsSacredSegment(p, 0.160000000, 0.277128129, 0.320000000, -0.554256258));
+    distance = min(distance, glsSacredSegment(p, -0.160000000, 0.277128129, -0.320000000, 0.000000000));
+    distance = min(distance, glsSacredSegment(p, -0.160000000, 0.277128129, -0.160000000, -0.277128129));
+    distance = min(distance, glsSacredSegment(p, -0.160000000, 0.277128129, 0.160000000, -0.277128129));
+    distance = min(distance, glsSacredSegment(p, -0.160000000, 0.277128129, 0.640000000, 0.000000000));
+    distance = min(distance, glsSacredSegment(p, -0.160000000, 0.277128129, 0.320000000, 0.554256258));
+    distance = min(distance, glsSacredSegment(p, -0.160000000, 0.277128129, -0.320000000, 0.554256258));
+    distance = min(distance, glsSacredSegment(p, -0.160000000, 0.277128129, -0.640000000, 0.000000000));
+    distance = min(distance, glsSacredSegment(p, -0.160000000, 0.277128129, -0.320000000, -0.554256258));
+    distance = min(distance, glsSacredSegment(p, -0.160000000, 0.277128129, 0.320000000, -0.554256258));
+    distance = min(distance, glsSacredSegment(p, -0.320000000, 0.000000000, -0.160000000, -0.277128129));
+    distance = min(distance, glsSacredSegment(p, -0.320000000, 0.000000000, 0.160000000, -0.277128129));
+    distance = min(distance, glsSacredSegment(p, -0.320000000, 0.000000000, 0.640000000, 0.000000000));
+    distance = min(distance, glsSacredSegment(p, -0.320000000, 0.000000000, 0.320000000, 0.554256258));
+    distance = min(distance, glsSacredSegment(p, -0.320000000, 0.000000000, -0.320000000, 0.554256258));
+    distance = min(distance, glsSacredSegment(p, -0.320000000, 0.000000000, -0.640000000, 0.000000000));
+    distance = min(distance, glsSacredSegment(p, -0.320000000, 0.000000000, -0.320000000, -0.554256258));
+    distance = min(distance, glsSacredSegment(p, -0.320000000, 0.000000000, 0.320000000, -0.554256258));
+    distance = min(distance, glsSacredSegment(p, -0.160000000, -0.277128129, 0.160000000, -0.277128129));
+    distance = min(distance, glsSacredSegment(p, -0.160000000, -0.277128129, 0.640000000, 0.000000000));
+    distance = min(distance, glsSacredSegment(p, -0.160000000, -0.277128129, 0.320000000, 0.554256258));
+    distance = min(distance, glsSacredSegment(p, -0.160000000, -0.277128129, -0.320000000, 0.554256258));
+    distance = min(distance, glsSacredSegment(p, -0.160000000, -0.277128129, -0.640000000, 0.000000000));
+    distance = min(distance, glsSacredSegment(p, -0.160000000, -0.277128129, -0.320000000, -0.554256258));
+    distance = min(distance, glsSacredSegment(p, -0.160000000, -0.277128129, 0.320000000, -0.554256258));
+    distance = min(distance, glsSacredSegment(p, 0.160000000, -0.277128129, 0.640000000, 0.000000000));
+    distance = min(distance, glsSacredSegment(p, 0.160000000, -0.277128129, 0.320000000, 0.554256258));
+    distance = min(distance, glsSacredSegment(p, 0.160000000, -0.277128129, -0.320000000, 0.554256258));
+    distance = min(distance, glsSacredSegment(p, 0.160000000, -0.277128129, -0.640000000, 0.000000000));
+    distance = min(distance, glsSacredSegment(p, 0.160000000, -0.277128129, -0.320000000, -0.554256258));
+    distance = min(distance, glsSacredSegment(p, 0.160000000, -0.277128129, 0.320000000, -0.554256258));
+    distance = min(distance, glsSacredSegment(p, 0.640000000, 0.000000000, 0.320000000, 0.554256258));
+    distance = min(distance, glsSacredSegment(p, 0.640000000, 0.000000000, -0.320000000, 0.554256258));
+    distance = min(distance, glsSacredSegment(p, 0.640000000, 0.000000000, -0.640000000, 0.000000000));
+    distance = min(distance, glsSacredSegment(p, 0.640000000, 0.000000000, -0.320000000, -0.554256258));
+    distance = min(distance, glsSacredSegment(p, 0.640000000, 0.000000000, 0.320000000, -0.554256258));
+    distance = min(distance, glsSacredSegment(p, 0.320000000, 0.554256258, -0.320000000, 0.554256258));
+    distance = min(distance, glsSacredSegment(p, 0.320000000, 0.554256258, -0.640000000, 0.000000000));
+    distance = min(distance, glsSacredSegment(p, 0.320000000, 0.554256258, -0.320000000, -0.554256258));
+    distance = min(distance, glsSacredSegment(p, 0.320000000, 0.554256258, 0.320000000, -0.554256258));
+    distance = min(distance, glsSacredSegment(p, -0.320000000, 0.554256258, -0.640000000, 0.000000000));
+    distance = min(distance, glsSacredSegment(p, -0.320000000, 0.554256258, -0.320000000, -0.554256258));
+    distance = min(distance, glsSacredSegment(p, -0.320000000, 0.554256258, 0.320000000, -0.554256258));
+    distance = min(distance, glsSacredSegment(p, -0.640000000, 0.000000000, -0.320000000, -0.554256258));
+    distance = min(distance, glsSacredSegment(p, -0.640000000, 0.000000000, 0.320000000, -0.554256258));
+    distance = min(distance, glsSacredSegment(p, -0.320000000, -0.554256258, 0.320000000, -0.554256258));
+  }
+  return (distance - 0.016) * 12.0;
+}
+
+fn glsStarDistance(p: vec2<f32>) -> f32 {
+  var distance = 10.0;
+  var inside = false;
+  {
+    let a = vec2<f32>(0.000000000, 0.900000000);
+    let b = vec2<f32>(-0.235114101, 0.323606798);
+    let edge = b - a;
+    let q = p - a;
+    distance = min(distance, length(q - edge * clamp(dot(q, edge) / dot(edge, edge), 0.0, 1.0)));
+    if ((a.y > p.y) != (b.y > p.y)) {
+      if (p.x < a.x + (p.y - a.y) * (b.x - a.x) / (b.y - a.y)) { inside = !inside; }
+    }
+  }
+  {
+    let a = vec2<f32>(-0.235114101, 0.323606798);
+    let b = vec2<f32>(-0.855950865, 0.278115295);
+    let edge = b - a;
+    let q = p - a;
+    distance = min(distance, length(q - edge * clamp(dot(q, edge) / dot(edge, edge), 0.0, 1.0)));
+    if ((a.y > p.y) != (b.y > p.y)) {
+      if (p.x < a.x + (p.y - a.y) * (b.x - a.x) / (b.y - a.y)) { inside = !inside; }
+    }
+  }
+  {
+    let a = vec2<f32>(-0.855950865, 0.278115295);
+    let b = vec2<f32>(-0.380422607, -0.123606798);
+    let edge = b - a;
+    let q = p - a;
+    distance = min(distance, length(q - edge * clamp(dot(q, edge) / dot(edge, edge), 0.0, 1.0)));
+    if ((a.y > p.y) != (b.y > p.y)) {
+      if (p.x < a.x + (p.y - a.y) * (b.x - a.x) / (b.y - a.y)) { inside = !inside; }
+    }
+  }
+  {
+    let a = vec2<f32>(-0.380422607, -0.123606798);
+    let b = vec2<f32>(-0.529006727, -0.728115295);
+    let edge = b - a;
+    let q = p - a;
+    distance = min(distance, length(q - edge * clamp(dot(q, edge) / dot(edge, edge), 0.0, 1.0)));
+    if ((a.y > p.y) != (b.y > p.y)) {
+      if (p.x < a.x + (p.y - a.y) * (b.x - a.x) / (b.y - a.y)) { inside = !inside; }
+    }
+  }
+  {
+    let a = vec2<f32>(-0.529006727, -0.728115295);
+    let b = vec2<f32>(-0.000000000, -0.400000000);
+    let edge = b - a;
+    let q = p - a;
+    distance = min(distance, length(q - edge * clamp(dot(q, edge) / dot(edge, edge), 0.0, 1.0)));
+    if ((a.y > p.y) != (b.y > p.y)) {
+      if (p.x < a.x + (p.y - a.y) * (b.x - a.x) / (b.y - a.y)) { inside = !inside; }
+    }
+  }
+  {
+    let a = vec2<f32>(-0.000000000, -0.400000000);
+    let b = vec2<f32>(0.529006727, -0.728115295);
+    let edge = b - a;
+    let q = p - a;
+    distance = min(distance, length(q - edge * clamp(dot(q, edge) / dot(edge, edge), 0.0, 1.0)));
+    if ((a.y > p.y) != (b.y > p.y)) {
+      if (p.x < a.x + (p.y - a.y) * (b.x - a.x) / (b.y - a.y)) { inside = !inside; }
+    }
+  }
+  {
+    let a = vec2<f32>(0.529006727, -0.728115295);
+    let b = vec2<f32>(0.380422607, -0.123606798);
+    let edge = b - a;
+    let q = p - a;
+    distance = min(distance, length(q - edge * clamp(dot(q, edge) / dot(edge, edge), 0.0, 1.0)));
+    if ((a.y > p.y) != (b.y > p.y)) {
+      if (p.x < a.x + (p.y - a.y) * (b.x - a.x) / (b.y - a.y)) { inside = !inside; }
+    }
+  }
+  {
+    let a = vec2<f32>(0.380422607, -0.123606798);
+    let b = vec2<f32>(0.855950865, 0.278115295);
+    let edge = b - a;
+    let q = p - a;
+    distance = min(distance, length(q - edge * clamp(dot(q, edge) / dot(edge, edge), 0.0, 1.0)));
+    if ((a.y > p.y) != (b.y > p.y)) {
+      if (p.x < a.x + (p.y - a.y) * (b.x - a.x) / (b.y - a.y)) { inside = !inside; }
+    }
+  }
+  {
+    let a = vec2<f32>(0.855950865, 0.278115295);
+    let b = vec2<f32>(0.235114101, 0.323606798);
+    let edge = b - a;
+    let q = p - a;
+    distance = min(distance, length(q - edge * clamp(dot(q, edge) / dot(edge, edge), 0.0, 1.0)));
+    if ((a.y > p.y) != (b.y > p.y)) {
+      if (p.x < a.x + (p.y - a.y) * (b.x - a.x) / (b.y - a.y)) { inside = !inside; }
+    }
+  }
+  {
+    let a = vec2<f32>(0.235114101, 0.323606798);
+    let b = vec2<f32>(0.000000000, 0.900000000);
+    let edge = b - a;
+    let q = p - a;
+    distance = min(distance, length(q - edge * clamp(dot(q, edge) / dot(edge, edge), 0.0, 1.0)));
+    if ((a.y > p.y) != (b.y > p.y)) {
+      if (p.x < a.x + (p.y - a.y) * (b.x - a.x) / (b.y - a.y)) { inside = !inside; }
+    }
+  }
+  return select(distance, -distance, inside);
+}
+
+fn glsStar7Distance(p: vec2<f32>) -> f32 {
+  var distance = 10.0;
+  var inside = false;
+  {
+    let a = vec2<f32>(0.000000000, 0.900000000);
+    let b = vec2<f32>(-0.199586520, 0.414445679);
+    let edge = b - a;
+    let q = p - a;
+    distance = min(distance, length(q - edge * clamp(dot(q, edge) / dot(edge, edge), 0.0, 1.0)));
+    if ((a.y > p.y) != (b.y > p.y)) {
+      if (p.x < a.x + (p.y - a.y) * (b.x - a.x) / (b.y - a.y)) { inside = !inside; }
+    }
+  }
+  {
+    let a = vec2<f32>(-0.199586520, 0.414445679);
+    let b = vec2<f32>(-0.703648334, 0.561140822);
+    let edge = b - a;
+    let q = p - a;
+    distance = min(distance, length(q - edge * clamp(dot(q, edge) / dot(edge, edge), 0.0, 1.0)));
+    if ((a.y > p.y) != (b.y > p.y)) {
+      if (p.x < a.x + (p.y - a.y) * (b.x - a.x) / (b.y - a.y)) { inside = !inside; }
+    }
+  }
+  {
+    let a = vec2<f32>(-0.703648334, 0.561140822);
+    let b = vec2<f32>(-0.448466840, 0.102359630);
+    let edge = b - a;
+    let q = p - a;
+    distance = min(distance, length(q - edge * clamp(dot(q, edge) / dot(edge, edge), 0.0, 1.0)));
+    if ((a.y > p.y) != (b.y > p.y)) {
+      if (p.x < a.x + (p.y - a.y) * (b.x - a.x) / (b.y - a.y)) { inside = !inside; }
+    }
+  }
+  {
+    let a = vec2<f32>(-0.448466840, 0.102359630);
+    let b = vec2<f32>(-0.877435121, -0.200268841);
+    let edge = b - a;
+    let q = p - a;
+    distance = min(distance, length(q - edge * clamp(dot(q, edge) / dot(edge, edge), 0.0, 1.0)));
+    if ((a.y > p.y) != (b.y > p.y)) {
+      if (p.x < a.x + (p.y - a.y) * (b.x - a.x) / (b.y - a.y)) { inside = !inside; }
+    }
+  }
+  {
+    let a = vec2<f32>(-0.877435121, -0.200268841);
+    let b = vec2<f32>(-0.359642482, -0.286805309);
+    let edge = b - a;
+    let q = p - a;
+    distance = min(distance, length(q - edge * clamp(dot(q, edge) / dot(edge, edge), 0.0, 1.0)));
+    if ((a.y > p.y) != (b.y > p.y)) {
+      if (p.x < a.x + (p.y - a.y) * (b.x - a.x) / (b.y - a.y)) { inside = !inside; }
+    }
+  }
+  {
+    let a = vec2<f32>(-0.359642482, -0.286805309);
+    let b = vec2<f32>(-0.390495365, -0.810871981);
+    let edge = b - a;
+    let q = p - a;
+    distance = min(distance, length(q - edge * clamp(dot(q, edge) / dot(edge, edge), 0.0, 1.0)));
+    if ((a.y > p.y) != (b.y > p.y)) {
+      if (p.x < a.x + (p.y - a.y) * (b.x - a.x) / (b.y - a.y)) { inside = !inside; }
+    }
+  }
+  {
+    let a = vec2<f32>(-0.390495365, -0.810871981);
+    let b = vec2<f32>(-0.000000000, -0.460000000);
+    let edge = b - a;
+    let q = p - a;
+    distance = min(distance, length(q - edge * clamp(dot(q, edge) / dot(edge, edge), 0.0, 1.0)));
+    if ((a.y > p.y) != (b.y > p.y)) {
+      if (p.x < a.x + (p.y - a.y) * (b.x - a.x) / (b.y - a.y)) { inside = !inside; }
+    }
+  }
+  {
+    let a = vec2<f32>(-0.000000000, -0.460000000);
+    let b = vec2<f32>(0.390495365, -0.810871981);
+    let edge = b - a;
+    let q = p - a;
+    distance = min(distance, length(q - edge * clamp(dot(q, edge) / dot(edge, edge), 0.0, 1.0)));
+    if ((a.y > p.y) != (b.y > p.y)) {
+      if (p.x < a.x + (p.y - a.y) * (b.x - a.x) / (b.y - a.y)) { inside = !inside; }
+    }
+  }
+  {
+    let a = vec2<f32>(0.390495365, -0.810871981);
+    let b = vec2<f32>(0.359642482, -0.286805309);
+    let edge = b - a;
+    let q = p - a;
+    distance = min(distance, length(q - edge * clamp(dot(q, edge) / dot(edge, edge), 0.0, 1.0)));
+    if ((a.y > p.y) != (b.y > p.y)) {
+      if (p.x < a.x + (p.y - a.y) * (b.x - a.x) / (b.y - a.y)) { inside = !inside; }
+    }
+  }
+  {
+    let a = vec2<f32>(0.359642482, -0.286805309);
+    let b = vec2<f32>(0.877435121, -0.200268841);
+    let edge = b - a;
+    let q = p - a;
+    distance = min(distance, length(q - edge * clamp(dot(q, edge) / dot(edge, edge), 0.0, 1.0)));
+    if ((a.y > p.y) != (b.y > p.y)) {
+      if (p.x < a.x + (p.y - a.y) * (b.x - a.x) / (b.y - a.y)) { inside = !inside; }
+    }
+  }
+  {
+    let a = vec2<f32>(0.877435121, -0.200268841);
+    let b = vec2<f32>(0.448466840, 0.102359630);
+    let edge = b - a;
+    let q = p - a;
+    distance = min(distance, length(q - edge * clamp(dot(q, edge) / dot(edge, edge), 0.0, 1.0)));
+    if ((a.y > p.y) != (b.y > p.y)) {
+      if (p.x < a.x + (p.y - a.y) * (b.x - a.x) / (b.y - a.y)) { inside = !inside; }
+    }
+  }
+  {
+    let a = vec2<f32>(0.448466840, 0.102359630);
+    let b = vec2<f32>(0.703648334, 0.561140822);
+    let edge = b - a;
+    let q = p - a;
+    distance = min(distance, length(q - edge * clamp(dot(q, edge) / dot(edge, edge), 0.0, 1.0)));
+    if ((a.y > p.y) != (b.y > p.y)) {
+      if (p.x < a.x + (p.y - a.y) * (b.x - a.x) / (b.y - a.y)) { inside = !inside; }
+    }
+  }
+  {
+    let a = vec2<f32>(0.703648334, 0.561140822);
+    let b = vec2<f32>(0.199586520, 0.414445679);
+    let edge = b - a;
+    let q = p - a;
+    distance = min(distance, length(q - edge * clamp(dot(q, edge) / dot(edge, edge), 0.0, 1.0)));
+    if ((a.y > p.y) != (b.y > p.y)) {
+      if (p.x < a.x + (p.y - a.y) * (b.x - a.x) / (b.y - a.y)) { inside = !inside; }
+    }
+  }
+  {
+    let a = vec2<f32>(0.199586520, 0.414445679);
+    let b = vec2<f32>(0.000000000, 0.900000000);
+    let edge = b - a;
+    let q = p - a;
+    distance = min(distance, length(q - edge * clamp(dot(q, edge) / dot(edge, edge), 0.0, 1.0)));
+    if ((a.y > p.y) != (b.y > p.y)) {
+      if (p.x < a.x + (p.y - a.y) * (b.x - a.x) / (b.y - a.y)) { inside = !inside; }
+    }
+  }
+  return select(distance, -distance, inside);
+}
+
+fn glsShapeDistance(p: vec2<f32>) -> f32 {
+  if (u.shape.x > 12.5) { return 1.0 + glsStar7Distance(p); }
+  if (u.shape.x > 11.5) { return 1.0 + glsStarDistance(p); }
+  if (u.shape.x > 9.5 && u.shape.x < 10.5) {
+    let left = sqrt((p.x + 0.4) * (p.x + 0.4) + p.y * p.y) - 0.8;
+    let right = sqrt((p.x - 0.4) * (p.x - 0.4) + p.y * p.y) - 0.8;
+    return 1.0 + glsBevelMax(left, right);
+  }
+  if (u.shape.x > 7.5) { return 1.0 + glsSacredDistance(p); }
+  if (u.shape.x < 0.5) { return length(p); }
+  // Signed, normalized face distances give every edge the same glass thickness.
+  if (u.shape.x < 1.5) {
+    return 1.0 + glsBevelMax(abs(p.x) - 0.8660254, (abs(p.y) + abs(p.x) * 0.5773503 - 1.0) * 0.8660254);
+  }
+  if (u.shape.x < 2.5) {
+    return 1.0 + glsBevelMax(abs(p.y) - 0.65, (abs(p.x - p.y * 0.4) - 0.65) / 1.077033);
+  }
+  if (u.shape.x < 3.5) {
+    return 1.0 + glsBevelMax(abs(p.y) - 0.65, (abs(p.x) + p.y * 0.3 - 0.565) / 1.044031);
+  }
+  if (u.shape.x < 4.5) { return 1.0 + glsBevelMax(glsBevelMax((p.x * -0.866025404 + p.y * 0.500000000 - 0.450000000), (p.x * -0.000000000 + p.y * -1.000000000 - 0.450000000)), (p.x * 0.866025404 + p.y * 0.500000000 - 0.450000000)); }
+  if (u.shape.x < 5.5) { return 1.0 + glsBevelMax(glsBevelMax(glsBevelMax(glsBevelMax((p.x * -0.587785252 + p.y * 0.809016994 - 0.728115295), (p.x * -0.951056516 + p.y * -0.309016994 - 0.728115295)), (p.x * -0.000000000 + p.y * -1.000000000 - 0.728115295)), (p.x * 0.951056516 + p.y * -0.309016994 - 0.728115295)), (p.x * 0.587785252 + p.y * 0.809016994 - 0.728115295)); }
+  if (u.shape.x < 6.5) { return 1.0 + glsBevelMax(glsBevelMax(glsBevelMax(glsBevelMax(glsBevelMax((p.x * -0.500000000 + p.y * 0.866025404 - 0.779422863), (p.x * -1.000000000 + p.y * 0.000000000 - 0.779422863)), (p.x * -0.500000000 + p.y * -0.866025404 - 0.779422863)), (p.x * 0.500000000 + p.y * -0.866025404 - 0.779422863)), (p.x * 1.000000000 + p.y * -0.000000000 - 0.779422863)), (p.x * 0.500000000 + p.y * 0.866025404 - 0.779422863)); }
+  return 1.0 + glsBevelMax(glsBevelMax(glsBevelMax(glsBevelMax(glsBevelMax(glsBevelMax(glsBevelMax((p.x * -0.382683432 + p.y * 0.923879533 - 0.831491579), (p.x * -0.923879533 + p.y * 0.382683432 - 0.831491579)), (p.x * -0.923879533 + p.y * -0.382683432 - 0.831491579)), (p.x * -0.382683432 + p.y * -0.923879533 - 0.831491579)), (p.x * 0.382683432 + p.y * -0.923879533 - 0.831491579)), (p.x * 0.923879533 + p.y * -0.382683432 - 0.831491579)), (p.x * 0.923879533 + p.y * 0.382683432 - 0.831491579)), (p.x * 0.382683432 + p.y * 0.923879533 - 0.831491579));
+}
+
 fn glsContourNormal(uv: vec2<f32>, rad: f32, t: f32, amount: f32) -> vec2<f32> {
+  if (u.shape.x > 0.5) {
+    let p = uv / max(rad * glsContourScale(uv, t, amount), 0.05);
+    let e = 0.006;
+    let gradient = vec2<f32>(glsShapeDistance(p + vec2<f32>(e, 0.0)) - glsShapeDistance(p - vec2<f32>(e, 0.0)), glsShapeDistance(p + vec2<f32>(0.0, e)) - glsShapeDistance(p - vec2<f32>(0.0, e)));
+    return gradient / max(length(gradient), 0.00001);
+  }
   let distance = length(uv);
   if (distance <= 0.0001) { return vec2<f32>(0.0); }
   let radial = uv / distance;
@@ -1072,11 +1565,50 @@ fn glsRefractionNormal(base: vec2<f32>, p: vec2<f32>, t: f32,
   return normalize(base + tangent * wave);
 }
 
+// Premultiplied, animated aura behind the silhouette, independent of the shell.
+fn glsAuraBehind(base: vec4<f32>, uv01: vec2<f32>) -> vec4<f32> {
+  if (u.aura.x < 0.5 || u.aura.y <= 0.0) { return base; }
+  let fc = vec2<f32>(uv01.x, 1.0 - uv01.y) * u.size;
+  let uv = (2.0 * fc - u.size) / glsRenderMinSize();
+  let rad = max(u.radius, 0.05) * glsContourScale(uv, u.time * u.speed, u.contourDeform);
+  let emblem = u.shape.x > 7.5 && u.shape.x < 11.5 && !(u.shape.x > 9.5 && u.shape.x < 10.5);
+  let distance = select(glsShapeDistance(uv / rad) - 1.0, length(uv / rad) - 0.85, emblem) * rad;
+  let phase = u.time * u.speed * u.aura.w;
+  let angle = atan2(uv.y, uv.x);
+  let motion = 0.78 + 0.12 * sin(angle * 3.0 - phase * 1.4) + 0.1 * sin(angle * 5.0 + phase * 0.9);
+  let effect = i32(u.auraEffect.x + 0.5);
+  let pulse = 0.5 + 0.5 * sin(phase * 2.8);
+  let pulseWidth = select(1.0, 0.65 + 0.55 * pulse, effect == 1);
+  let width = max(u.aura.z, 0.03) * motion * pulseWidth;
+  let radial = max(distance, 0.0) / width;
+  var effectLight = 1.0;
+  if (effect == 1) { effectLight = 0.35 + 0.65 * pulse; }
+  if (effect == 2) {
+    let wave = 0.5 + 0.5 * sin(radial * 28.0 - phase * 4.0);
+    effectLight = 0.22 + 0.78 * wave * wave * wave;
+  }
+  if (effect == 3) {
+    let spiral = 0.5 + 0.5 * sin(angle * 5.0 - radial * 14.0 - phase * 2.0);
+    effectLight = 0.2 + 0.8 * spiral * spiral;
+  }
+  let outside = smoothstep(-0.004, 0.018, distance);
+  let falloff = exp(-pow(max(distance, 0.0) / width, 2.0) * 2.8);
+  let alpha = clamp(u.aura.y * falloff * outside * effectLight * (0.84 + 0.16 * sin(phase * 1.7)), 0.0, 0.85);
+  // Three colors blend in a continuous cycle with no seam at the angle wrap.
+  let colorPhase = fract(angle / 6.2831853 - phase * 0.085 + radial * 0.14) * 3.0;
+  var auraTint = u.auraColor.rgb;
+  if (colorPhase < 1.0) { auraTint = mix(u.auraColor.rgb, u.auraColorB.rgb, smoothstep(0.0, 1.0, colorPhase)); }
+  else if (colorPhase < 2.0) { auraTint = mix(u.auraColorB.rgb, u.auraColorC.rgb, smoothstep(0.0, 1.0, colorPhase - 1.0)); }
+  else { auraTint = mix(u.auraColorC.rgb, u.auraColor.rgb, smoothstep(0.0, 1.0, colorPhase - 2.0)); }
+  let tint = mix(auraTint, vec3<f32>(1.0), exp(-max(distance, 0.0) / 0.018) * 0.2);
+  return vec4<f32>(base.rgb + tint * alpha * (1.0 - base.a), base.a + alpha * (1.0 - base.a));
+}
+
 fn orbGlassLiquidAnim(uv01: vec2<f32>) -> vec4<f32> {
   // The runner hands uv01 with y down from the top, like stitchable MSL's
   // `position`; the orb was authored bottom-left, so flip back.
   let fc = vec2<f32>(uv01.x, 1.0 - uv01.y) * u.size;
-  let uv = (2.0 * fc - u.size) / max(min(u.size.x, u.size.y), 1.0);
+  let uv = (2.0 * fc - u.size) / glsRenderMinSize();
 
   let rad = max(u.radius, 0.05);
   let t = u.time * u.speed;
@@ -1102,18 +1634,18 @@ fn orbGlassLiquidAnim(uv01: vec2<f32>) -> vec4<f32> {
   // four-million-byte frame, off by 1/255. Those are the branch existing, not a
   // pixel wrongly skipped — a copy of this guard with a threshold it can never
   // reach diffs identically, and against it the guard is exactly 0/255.
-  if (length(uv) > contourRad * (1.01 + mfEdgeD(u.edgeSoftness))) {
+  if (glsShapeDistance(uv / contourRad) > (1.01 + mfEdgeD(u.edgeSoftness))) {
     // Off the ball entirely — but the halo lives out here, so hand back
     // what the edge bank paints on nothing. Exactly black at Glow 0.
-    let halo = clamp(mfEdgeGlow(vec3<f32>(0.0), uv, vec2<f32>(0.0), contourRad,
+    let halo = clamp(mfEdgeGlow(vec3<f32>(0.0), uv * (glsShapeDistance(uv / contourRad) * contourRad / max(length(uv), 0.00001)), vec2<f32>(0.0), contourRad,
                                 u.edgeSoftness, u.edgeGlow, u.glowColor.rgb),
                      vec3<f32>(0.0), vec3<f32>(1.0));
     let haloAlpha = max(halo.r, max(halo.g, halo.b));
-    return vec4<f32>(halo, haloAlpha);
+    return glsAuraBehind(vec4<f32>(halo, haloAlpha), uv01);
   }
 
   let p   = uv / contourRad;     // deformed ball space: |p| == 1 on the edge
-  let pd  = length(p);
+  let pd  = glsShapeDistance(p);
 
   // ---- the fluid ------------------------------------------------------
   let fu = p / GL_FU;
@@ -1134,7 +1666,7 @@ fn orbGlassLiquidAnim(uv01: vec2<f32>) -> vec4<f32> {
   let refractionWidth = 0.015 + 0.95 * clamp(u.shellMidAlpha, 0.0, 1.0);
   let refractionT = edgeDepth / max(refractionWidth, 0.001);
   let refractionProfile = pow(glsRefractionProfile(refractionT), 0.68);
-  let refractionAmount = 1.6 * clamp(u.glassOpacity, 0.0, 1.0)
+  let refractionAmount = select(0.42, 1.6, u.shape.x < 0.5) * clamp(u.glassOpacity, 0.0, 1.0)
                          * refractionProfile;
   let refractedP = p - normal * refractionAmount;
   var fcol = vec3<f32>(0.0);
@@ -1193,27 +1725,35 @@ fn orbGlassLiquidAnim(uv01: vec2<f32>) -> vec4<f32> {
     );
     col = glsOver(col, u.shellInner.rgb, innerRimAlpha);
 
+    let lightingVector = normal + select(vec2<f32>(0.0), p * 0.32, u.shape.x > 0.5);
+    let lightingNormal = lightingVector / max(length(lightingVector), 0.00001);
     let coolDirection = normalize(vec2<f32>(0.84, 0.54));
     let warmDirection = normalize(vec2<f32>(-0.62, -0.78));
-    let coolSplit = glsHighlightLobe(normal, coolDirection, -0.32, 1.8);
-    let warmSplit = glsHighlightLobe(normal, warmDirection, -0.28, 2.0);
+    let coolSplit = glsHighlightLobe(lightingNormal, coolDirection, -0.32, 1.8);
+    let warmSplit = glsHighlightLobe(lightingNormal, warmDirection, -0.28, 2.0);
     let dispersion = opticalRim * clamp(u.gloss, 0.0, 2.0)
                      * (0.8 + 0.8 * u.shellEdgeAlpha);
     col = glsOver(col, u.shellMid.rgb, dispersion * coolSplit);
     col = glsOver(col, u.shellEdge.rgb, dispersion * warmSplit);
 
     let edgeShadow = opticalRim * (0.015 + 0.15 * u.shellEdgeAlpha)
-                     * (0.15 + 0.85 * max(dot(normal, vec2<f32>(0.45, -0.89)), 0.0));
+                     * (0.15 + 0.85 * max(dot(lightingNormal, vec2<f32>(0.45, -0.89)), 0.0));
     col = col * (1.0 - edgeShadow);
 
     let keyDirection = normalize(vec2<f32>(-0.68, 0.73));
     let fillDirection = normalize(vec2<f32>(0.74, -0.67));
-    let key = opticalRim * glsHighlightLobe(normal, keyDirection, 0.2, 2.8)
+    let key = opticalRim * glsHighlightLobe(lightingNormal, keyDirection, 0.2, 2.8)
               * clamp(u.sheen, 0.0, 2.0) * 1.4;
-    let fill = opticalRim * glsHighlightLobe(normal, fillDirection, 0.4, 3.6)
+    let fill = opticalRim * glsHighlightLobe(lightingNormal, fillDirection, 0.4, 3.6)
                * clamp(u.sheen, 0.0, 2.0) * 1.0;
     col = glsOver(col, u.sheenColor.rgb, key);
     col = glsOver(col, u.specColor.rgb, fill);
+    if (u.shape.x > 0.5) {
+      let lip = exp(-edgeDepth * edgeDepth / 0.00012) * clearFa;
+      let stripe = dot(p, vec2<f32>(0.6, 0.8)) - 0.24;
+      let reflection = exp(-stripe * stripe / 0.075);
+      col = glsOver(col, u.sheenColor.rgb, lip * u.sheen * 0.38 + reflection * u.glassOpacity * u.sheen * 0.075 * clearFa);
+    }
   }
 
   // The ball's own edge, and nothing outside it — everything the effect does
@@ -1222,7 +1762,8 @@ fn orbGlassLiquidAnim(uv01: vec2<f32>) -> vec4<f32> {
   col = clamp(col * max(u.exposure, 0.0), vec3<f32>(0.0), vec3<f32>(1.0)) * ballA;
   // The Orbs edge bank — the Edge group's Glow. Adding zero is exactly
   // the render this file was diffed against, and zero is the default.
-  let edged = mfEdgeGlow(col, uv, vec2<f32>(0.0), contourRad,
+  if (u.shape.x > 0.5 && u.shape.x < 1.5) { col *= select(select(0.72, 0.94, p.x < 0.0), 1.16, p.y > abs(p.x) * 0.5773503); }
+  let edged = mfEdgeGlow(col, uv * (glsShapeDistance(uv / contourRad) * contourRad / max(length(uv), 0.00001)), vec2<f32>(0.0), contourRad,
                          u.edgeSoftness, u.edgeGlow, u.glowColor.rgb);
   let finalColor = clamp(edged, vec3<f32>(0.0), vec3<f32>(1.0));
   let emissionAlpha = max(finalColor.r, max(finalColor.g, finalColor.b));
@@ -1232,5 +1773,5 @@ fn orbGlassLiquidAnim(uv01: vec2<f32>) -> vec4<f32> {
     emissionAlpha,
     emissionOnly || particleGlassOverlay,
   );
-  return vec4<f32>(finalColor, finalAlpha);
+  return glsAuraBehind(vec4<f32>(finalColor, finalAlpha), uv01);
 }

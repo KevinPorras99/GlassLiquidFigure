@@ -62,7 +62,7 @@ function SheetOverlay({ className, ...props }: SheetPrimitive.Backdrop.Props) {
 function SheetContent({
   className,
   children,
-  closeLabel = "关闭",
+  closeLabel = "Close",
   portalContainer,
   side = "right",
   showCloseButton = true,

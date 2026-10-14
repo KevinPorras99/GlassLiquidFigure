@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 204">
+<defs>
+<clipPath id="disc"><circle cx="150" cy="105" r="86"/></clipPath>
+<filter id="mist" x="0" y="0" width="100%" height="100%" color-interpolation-filters="sRGB">
+<feTurbulence type="fractalNoise" baseFrequency=".025 .029" numOctaves="3" seed="17"/>
+<feColorMatrix type="saturate" values="0"/>
+<feComponentTransfer>
+<feFuncR type="table" tableValues=".02 .025 .035 .11 .3 .51 .68"/>
+<feFuncG type="table" tableValues=".08 .14 .3 .51 .73 .88 .97"/>
+<feFuncB type="table" tableValues=".11 .18 .35 .57 .74 .85 .91"/>
+<feFuncA type="table" tableValues="1 1"/>
+</feComponentTransfer><feGaussianBlur stdDeviation="1.2"/>
+</filter>
+<filter id="soft"><feGaussianBlur stdDeviation="7"/></filter>
+<radialGradient id="depth" cx="48%" cy="42%" r="58%">
+<stop offset=".45" stop-color="#031923" stop-opacity="0"/>
+<stop offset=".85" stop-color="#031923" stop-opacity=".2"/>
+<stop offset="1" stop-color="#031923" stop-opacity=".85"/>
+</radialGradient>
+<radialGradient id="rim">
+<stop offset=".91" stop-color="#85eae0" stop-opacity="0"/>
+<stop offset=".974" stop-color="#85eae0" stop-opacity=".12"/>
+<stop offset=".991" stop-color="#b1f5e8" stop-opacity=".7"/>
+<stop offset="1" stop-color="#c8fff3" stop-opacity=".25"/>
+</radialGradient>
+<linearGradient id="edge" x1="0%" y1="0%" x2="30%" y2="100%">
+<stop stop-color="#b6fff3" stop-opacity=".85"/>
+<stop offset=".5" stop-color="#a3f5e9" stop-opacity=".55"/>
+<stop offset="1" stop-color="#3a989d" stop-opacity=".25"/>
+</linearGradient>
+</defs>
+<path fill="#050e18" d="M0 0h300v204H0z"/>
+<g clip-path="url(#disc)">
+<path fill="#277f8d" d="M64 19h172v172H64z" filter="url(#mist)"/>
+<g filter="url(#soft)">
+<path fill="#031c28" opacity=".75" d="M147 62c-21 15 6 20-10 35-20 19 1 22-2 38-5 15 11 33 27 45-2-19-11-27-4-46 12-19 8-29-1-41-10-14 2-22-10-31Z"/>
+<path fill="#8ae9dc" opacity=".65" d="M188 44c-10 18 9 25-9 46-16 16-7 27 10 28 17 2 21-10 11-23-9-10 9-19 3-32-3-9-9-13-15-19ZM86 108c-14 13 6 22 19 18 10-3 3 14 13 13 20-2 14-21 1-26-15-5-21-15-33-5Z"/>
+</g>
+<circle cx="150" cy="105" r="86" fill="url(#depth)"/>
+<circle cx="150" cy="105" r="86" fill="url(#rim)"/>
+</g>
+<circle cx="150" cy="105" r="85.6" fill="none" stroke="url(#edge)" stroke-width=".8"/>
+</svg>

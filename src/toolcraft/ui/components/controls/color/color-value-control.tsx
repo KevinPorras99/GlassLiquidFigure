@@ -131,7 +131,7 @@ export function ColorValueControl({
           onCommit={handleDraftBlur}
         />
         <Input
-          aria-label={ariaLabels?.hexValue ?? `${label}十六进制值`}
+          aria-label={ariaLabels?.hexValue ?? `${label} hex value`}
           autoComplete="off"
           className="font-mono"
           name={inputName}

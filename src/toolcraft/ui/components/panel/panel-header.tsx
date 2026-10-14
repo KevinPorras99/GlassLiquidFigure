@@ -24,11 +24,11 @@ type PanelHeaderProps = {
 export function PanelHeader({
   collapsed,
   collapseDirection = "up",
-  collapseLabel = "收起参数面板",
-  expandLabel = "展开参数面板",
+  collapseLabel = "Collapse controls",
+  expandLabel = "Expand controls",
   onResetControls,
   onToggleCollapsed,
-  resetLabel = "重置全部参数",
+  resetLabel = "Reset all controls",
   title,
 }: PanelHeaderProps): React.JSX.Element {
   const arrowDirection =

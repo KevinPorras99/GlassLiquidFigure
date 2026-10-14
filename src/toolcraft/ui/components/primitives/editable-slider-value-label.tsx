@@ -101,7 +101,7 @@ export function EditableSliderValueLabel({
         />
       ) : (
         <EditableSliderValueButton
-          ariaLabel={editAriaLabel ?? `编辑${ariaLabel}`}
+          ariaLabel={editAriaLabel ?? `Edit ${ariaLabel}`}
           layout={layout}
           onBeginEditing={() => setEditing(true)}
           textClassName={valueTextClassName}

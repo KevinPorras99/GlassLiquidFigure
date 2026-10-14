@@ -1,6 +1,28 @@
 import effectSource from "../effect.wgsl?raw";
 
 const vertexAndFragment = `
+
+// Sample one color per character cell, then draw a 5x5 ASCII glyph.
+fn asciiCellSize() -> vec2<f32> {
+  return vec2<f32>(0.65, 1.0) * clamp(u.renderViewport.z, 5.0, 24.0) * max(glsRenderMinSize() / 700.0, 0.75);
+}
+fn asciiUv(uv: vec2<f32>) -> vec2<f32> {
+  if (u.renderViewport.y < 0.5) { return uv; }
+  let cell = asciiCellSize();
+  return clamp((floor(uv * u.size / cell) + 0.5) * cell / u.size, vec2<f32>(0.0), vec2<f32>(1.0));
+}
+fn asciiColor(color: vec4<f32>, uv: vec2<f32>) -> vec4<f32> {
+  if (u.renderViewport.y < 0.5) { return color; }
+  let brightness = dot(color.rgb / max(color.a, 0.001), vec3<f32>(0.2126, 0.7152, 0.0722));
+  let glyphs = array<u32, 8>(4194304u, 131200u, 14336u, 145536u, 18185553u, 1016800u, 11512810u, 15398446u);
+  let glyph = glyphs[u32(clamp(sqrt(max(brightness, 0.0)) * 7.0, 0.0, 7.0))];
+  let local = fract(uv * u.size / asciiCellSize());
+  let pixel = vec2<u32>(floor(local * vec2<f32>(6.0, 7.0)));
+  let bit = min(pixel.y * 5u + pixel.x, 31u);
+  let ink = select(0.0, 1.0, pixel.x < 5u && pixel.y < 5u && ((glyph >> bit) & 1u) == 1u);
+  return color * ink;
+}
+
 struct VOut {
   @builtin(position) pos: vec4<f32>,
   @location(0) uv: vec2<f32>,
@@ -20,19 +42,18 @@ fn vs_main(@builtin(vertex_index) i: u32) -> VOut {
   return out;
 }
 
-@fragment
-fn fs_main(in: VOut) -> @location(0) vec4<f32> {
+fn figureColor(in: VOut) -> vec4<f32> {
   let c = orbGlassLiquidAnim(in.uv);
 
   let fc = vec2<f32>(in.uv.x, 1.0 - in.uv.y) * u.size;
-  let uv = (2.0 * fc - u.size) / max(min(u.size.x, u.size.y), 1.0);
+  let uv = (2.0 * fc - u.size) / glsRenderMinSize();
   let rad = max(u.radius, 0.05);
   let t = u.time * u.speed;
   let contourRad = rad * glsContourScale(uv, t, u.contourDeform);
   let q = (2.0 * fc - u.size) / u.size;
   let fitEnd = 1.0;
-  let fitFeather = 2.0 / max(min(u.size.x, u.size.y), 1.0);
-  let fitStart = min(mix(contourRad, fitEnd, 0.5), fitEnd - fitFeather);
+  let fitFeather = 2.0 / glsRenderMinSize();
+  let fitStart = select(min(mix(contourRad, fitEnd, 0.5), fitEnd - fitFeather), fitEnd - fitFeather, u.aura.x > 0.5);
   let fit = 1.0 - smoothstep(fitStart, fitEnd, max(abs(q.x), abs(q.y)));
   return vec4<f32>(c.rgb * fit, c.a * fit);
 }
@@ -143,10 +164,11 @@ fn ribbon_vs_main(
     position,
     layerCenter * 0.14 + cos(t * 0.17 + layer * 0.9) * 0.04,
   );
+  position = prRotateY(prRotateX(position, u.shape.y), u.shape.z);
   position = prRotateY(position, t * 0.105 + sin(t * 0.21) * 0.11);
   position = prRotateX(position, -0.2 + sin(t * 0.16 + layer * 0.1) * 0.16);
 
-  let minSize = max(min(u.size.x, u.size.y), 1.0);
+  let minSize = glsRenderMinSize();
   let depthScale = 0.88 + position.z * 0.16;
   let orbPosition = position.xy * u.radius * 1.45 * depthScale;
   let clip = vec2<f32>(
@@ -207,7 +229,7 @@ fn ribbon_fs_main(in: RibbonOut) -> @location(0) vec4<f32> {
 @group(0) @binding(2) var ribbonSampler: sampler;
 
 fn prTextureUvFromOrb(p: vec2<f32>, contourRad: f32) -> vec2<f32> {
-  let minSize = max(min(u.size.x, u.size.y), 1.0);
+  let minSize = glsRenderMinSize();
   let fc = (p * contourRad * minSize + u.size) * 0.5;
   return clamp(
     vec2<f32>(fc.x / max(u.size.x, 1.0), 1.0 - fc.y / max(u.size.y, 1.0)),
@@ -225,31 +247,33 @@ fn prSampleRibbon(p: vec2<f32>, contourRad: f32) -> vec4<f32> {
   );
 }
 
-@fragment
-fn ribbon_composite_fs_main(in: VOut) -> @location(0) vec4<f32> {
+fn ribbonColor(in: VOut) -> vec4<f32> {
   let direct = textureSampleLevel(ribbonTexture, ribbonSampler, in.uv, 0.0);
-  if (u.glassEnabled <= 0.5) { return direct; }
+  if (u.glassEnabled <= 0.5 && u.shape.x < 0.5) { return glsAuraBehind(direct, in.uv); }
 
   let fc = vec2<f32>(in.uv.x, 1.0 - in.uv.y) * u.size;
-  let minSize = max(min(u.size.x, u.size.y), 1.0);
+  let minSize = glsRenderMinSize();
   let uv = (2.0 * fc - u.size) / minSize;
   let rad = max(u.radius, 0.05);
   let t = u.time * u.speed;
   let contourRad = rad * glsContourScale(uv, t, u.contourDeform);
+  if (u.glassEnabled <= 0.5) {
+    return glsAuraBehind(direct * (1.0 - smoothstep(0.99, 1.01, glsShapeDistance(uv / contourRad))), in.uv);
+  }
   let shell = orbGlassLiquidAnim(in.uv);
-  if (length(uv) > contourRad * (1.01 + mfEdgeD(u.edgeSoftness))) {
+  if (glsShapeDistance(uv / contourRad) > (1.01 + mfEdgeD(u.edgeSoftness))) {
     return shell;
   }
 
   let p = uv / contourRad;
-  let pd = length(p);
+  let pd = glsShapeDistance(p);
   let clearFa = 1.0 - smoothstep(GL_CLEAR_EA, GL_CLEAR_EB, pd);
   let normal = glsContourNormal(uv, rad, t, u.contourDeform);
   let edgeDepth = max(1.0 - pd, 0.0);
   let refractionWidth = 0.015 + 0.95 * clamp(u.shellMidAlpha, 0.0, 1.0);
   let refractionT = edgeDepth / max(refractionWidth, 0.001);
   let refractionProfile = pow(glsRefractionProfile(refractionT), 0.68);
-  let refractionAmount = 1.6 * clamp(u.glassOpacity, 0.0, 1.0)
+  let refractionAmount = select(0.42, 1.6, u.shape.x < 0.5) * clamp(u.glassOpacity, 0.0, 1.0)
                          * refractionProfile;
   let refractedP = p - normal * refractionAmount;
   let channelSplit = 0.14 * clamp(u.gloss, 0.0, 2.0)
@@ -267,6 +291,72 @@ fn ribbon_composite_fs_main(in: VOut) -> @location(0) vec4<f32> {
     shell.rgb + refracted.rgb * (1.0 - shell.a),
     shell.a + refracted.a * (1.0 - shell.a),
   );
+}
+
+// Rotate rays into object space, then intersect a solid version of the 2D shape.
+fn viewToObject(p: vec3<f32>) -> vec3<f32> {
+  return prRotateX(prRotateY(p, -u.shape.z), -u.shape.y);
+}
+fn solidDistance(p: vec3<f32>) -> f32 {
+  if (u.shape.x < 0.5) { return length(p) - 1.0; }
+  if (u.shape.x < 1.5) {
+    let q = abs(p) - vec3<f32>(0.7);
+    return length(max(q, vec3<f32>(0.0))) + min(max(q.x, max(q.y, q.z)), 0.0) - 0.035;
+  }
+  let d = vec2<f32>((glsShapeDistance(p.xy) - 1.0) * 0.45, abs(p.z) - 0.28);
+  return min(max(d.x, d.y), 0.0) + length(max(d, vec2<f32>(0.0))) - 0.025;
+}
+fn solidColor(in: VOut) -> vec4<f32> {
+  let screen = (in.uv * 2.0 - 1.0) * u.size / glsRenderMinSize();
+  let radius = max(u.radius, 0.05);
+  let origin = viewToObject(vec3<f32>(0.0, 0.0, 4.0));
+  let ray = viewToObject(normalize(vec3<f32>(screen.x / radius, -screen.y / radius, -4.0)));
+  var travel = 0.0;
+  var hit = false;
+  for (var i = 0; i < 96; i++) {
+    let distance = solidDistance(origin + ray * travel);
+    if (distance < 0.002) { hit = true; break; }
+    travel += max(distance * 0.65, 0.001);
+    if (travel > 7.0) { break; }
+  }
+  if (!hit) { return glsAuraBehind(vec4<f32>(0.0), in.uv); }
+  let p = origin + ray * travel;
+  let e = 0.003;
+  let normal = normalize(vec3<f32>(
+    solidDistance(p + vec3<f32>(e, 0.0, 0.0)) - solidDistance(p - vec3<f32>(e, 0.0, 0.0)),
+    solidDistance(p + vec3<f32>(0.0, e, 0.0)) - solidDistance(p - vec3<f32>(0.0, e, 0.0)),
+    solidDistance(p + vec3<f32>(0.0, 0.0, e)) - solidDistance(p - vec3<f32>(0.0, 0.0, e))
+  ));
+  // Triplanar material sampling keeps the sides colored as the object turns.
+  let t = u.time * u.speed;
+  let style = i32(u.style + 0.5);
+  let weights = pow(abs(normal), vec3<f32>(4.0));
+  let w = weights / max(weights.x + weights.y + weights.z, 0.001);
+  let color = glsPresetFluid(p.yz * 0.85, style, t) * w.x
+            + glsPresetFluid(p.xz * 0.85, style, t) * w.y
+            + glsPresetFluid(p.xy * 0.85, style, t) * w.z;
+  let light = viewToObject(normalize(vec3<f32>(-0.5, 0.7, 1.0)));
+  let diffuse = 0.32 + 0.68 * max(dot(normal, light), 0.0);
+  let halfVector = normalize(light - ray);
+  let specular = pow(max(dot(normal, halfVector), 0.0), 48.0) * u.gloss;
+  let rim = pow(1.0 - max(dot(normal, -ray), 0.0), 3.0);
+  let shaded = clamp(color * diffuse * u.exposure + u.specColor.rgb * specular * 0.5
+                    + u.glowColor.rgb * rim * (0.12 + u.edgeGlow * 0.3), vec3<f32>(0.0), vec3<f32>(1.0));
+  return glsAuraBehind(vec4<f32>(shaded, 1.0), in.uv);
+}
+
+@fragment
+fn fs_main(in: VOut) -> @location(0) vec4<f32> {
+  var sample = in;
+  sample.uv = asciiUv(in.uv);
+  if (u.shape.w > 0.5) { return asciiColor(solidColor(sample), in.uv); }
+  return asciiColor(figureColor(sample), in.uv);
+}
+@fragment
+fn ribbon_composite_fs_main(in: VOut) -> @location(0) vec4<f32> {
+  var sample = in;
+  sample.uv = asciiUv(in.uv);
+  return asciiColor(ribbonColor(sample), in.uv);
 }
 `;
 

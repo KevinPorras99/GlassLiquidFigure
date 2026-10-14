@@ -1,13 +1,11 @@
 import * as React from "react";
-import { CodeIcon, CopySimpleIcon, GithubLogoIcon } from "@phosphor-icons/react";
+import { Starfield, starfieldStyles } from "./starfield";
+import { CodeIcon, CopySimpleIcon } from "@phosphor-icons/react";
 
-import { Button, buttonVariants } from "@/toolcraft/ui/components/primitives/button";
+import { Button } from "@/toolcraft/ui/components/primitives/button";
 import { Input } from "@/toolcraft/ui/components/primitives/input";
 import {
-  Tooltip,
-  TooltipContent,
   TooltipProvider,
-  TooltipTrigger,
 } from "@/toolcraft/ui/components/primitives/tooltip";
 import { ControlFieldLabel } from "@/toolcraft/ui/components/control-layout";
 import { SwitchControl as Switch } from "@/toolcraft/ui/components/controls/boolean/boolean-controls";
@@ -42,10 +40,9 @@ import siriPreviewUrl from "./assets/presets/siri.png";
 import spectrumPreviewUrl from "./assets/presets/spectrum.png";
 import violetEmberPreviewUrl from "./assets/presets/violetEmber.png";
 import voiceWavePreviewUrl from "./assets/presets/voiceWave.png";
-import { createSwiftExport, createWebExport } from "./code-export";
+type ExportModule = typeof import("./code-export");
 import {
   colorLabels,
-  localeOptions,
   numericLabels,
   styleLabels,
   uiCopy,
@@ -71,6 +68,10 @@ import {
   type OrbStateName,
 } from "./orb-states";
 import {
+  type ShapeName,
+  shapeNames,
+  type AuraEffect,
+  auraEffectNames,
   effectDefaults,
   orbRadiusRange,
   type OrbParams,
@@ -83,6 +84,10 @@ const Color = React.lazy(async () => {
   const module = await import("@/toolcraft/ui/components/controls/color/color-control");
   return { default: module.ColorControl };
 });
+
+import galaxyCorePreviewUrl from "./assets/presets/galaxyCore.svg";
+import mysticMistPreviewUrl from "./assets/presets/mysticMist.svg";
+import crystalLightPreviewUrl from "./assets/presets/crystalLight.svg";
 
 const stylePreviewUrls: Record<StyleName, string> = {
   siri: siriPreviewUrl,
@@ -98,6 +103,9 @@ const stylePreviewUrls: Record<StyleName, string> = {
   refractiveBlob: refractiveBlobPreviewUrl,
   particleRibbon: particleRibbonPreviewUrl,
   chromaticMetal: chromaticMetalPreviewUrl,
+  galaxyCore: galaxyCorePreviewUrl,
+  mysticMist: mysticMistPreviewUrl,
+  crystalLight: crystalLightPreviewUrl,
 };
 const compactPreviewStyles = new Set<StyleName>([
   "particleRibbon",
@@ -112,7 +120,6 @@ type PreviewMode = "orb" | "scene";
 const defaultSceneText = "Thinking...";
 const maxSceneTextLength = 20;
 const hashSyncDelayMs = 500;
-const localeStorageKey = "liquid-orb-editor-locale";
 const activationDurationRange = { min: 0.05, max: 0.8, step: 0.01 } as const;
 const transitionDurationRange = { min: 0.1, max: 2, step: 0.05 } as const;
 
@@ -130,6 +137,7 @@ type NumericSpec = {
 };
 
 const ridgeStyles: readonly StyleName[] = [
+  "galaxyCore", "mysticMist", "crystalLight",
   "siri",
   "voiceWave",
   "spectrum",
@@ -141,6 +149,7 @@ const ridgeStyles: readonly StyleName[] = [
   "refractiveBlob",
 ];
 const sharpStyles: readonly StyleName[] = [
+  "crystalLight",
   "frost",
   "plasma",
   "chrome",
@@ -155,6 +164,12 @@ const chromaticMetalStyles: readonly StyleName[] = ["chromaticMetal"];
 const particleRibbonStyles: readonly StyleName[] = ["particleRibbon"];
 
 const numericSpecs: readonly NumericSpec[] = [
+  { key: "asciiSize", min: 5, max: 24, step: 1 },
+  { key: "starsDensity", min: 20, max: 300, step: 1 },
+  { key: "starsBrightness", min: 0, max: 1, step: 0.01 },
+  { key: "auraIntensity", min: 0, max: 1.5, step: 0.01 },
+  { key: "auraSize", min: 0.03, max: 0.5, step: 0.01 },
+  { key: "auraSpeed", min: 0, max: 2, step: 0.01 },
   { key: "speed", min: 0, max: 3, step: 0.01 },
   { key: "radius", ...orbRadiusRange, step: 0.01 },
   {
@@ -331,6 +346,9 @@ const colorKeys: readonly ColorKey[] = [
   "specColor",
   "canvasColor",
   "glowColor",
+  "auraColor",
+  "auraColorB",
+  "auraColorC",
 ];
 
 function clamp(value: number, min: number, max: number): number {
@@ -343,19 +361,6 @@ function normalizeColor(value: string): string | null {
 
 function limitSceneText(value: string): string {
   return Array.from(value).slice(0, maxSceneTextLength).join("");
-}
-
-function readInitialLocale(): Locale {
-  try {
-    const storedLocale = window.localStorage.getItem(localeStorageKey);
-    if (storedLocale === "zh" || storedLocale === "en") return storedLocale;
-  } catch (error) {
-    console.warn("Unable to read the saved interface language.", error);
-  }
-
-  return navigator.language.toLowerCase().startsWith("zh")
-    ? "zh"
-    : "en";
 }
 
 function readPreviewModeFromHash(): PreviewMode {
@@ -385,6 +390,15 @@ function readEditorStateFromHash(): OrbEditorState {
     ...stylePresets[selectedStyle],
   };
 
+  const shape = search.get("shape");
+  if (shape && shapeNames.includes(shape as ShapeName)) params.shape = shape as ShapeName;
+
+  params.asciiEnabled = search.get("ascii") === "1";
+  params.starsEnabled = search.get("stars") === "1";
+  params.auraEnabled = search.get("aura") === "1";
+  params.auraAudioEnabled = search.get("auraAudio") === "1";
+  const auraEffect = search.get("auraEffect");
+  if (auraEffect && auraEffectNames.includes(auraEffect as AuraEffect)) params.auraEffect = auraEffect as AuraEffect;
   const glass = search.get("glass");
   if (glass === "1") params.glassEnabled = true;
   if (glass === "0") params.glassEnabled = false;
@@ -468,6 +482,12 @@ function writeHash(
   const search = new URLSearchParams();
   search.set("effect", "orb-glass-liquid");
   search.set("style", params.style);
+  search.set("shape", params.shape);
+  search.set("ascii", params.asciiEnabled ? "1" : "0");
+  search.set("stars", params.starsEnabled ? "1" : "0");
+  search.set("aura", params.auraEnabled ? "1" : "0");
+  search.set("auraAudio", params.auraAudioEnabled ? "1" : "0");
+  search.set("auraEffect", params.auraEffect);
   search.set("glass", params.glassEnabled ? "1" : "0");
   search.set("state", activeState);
   search.set("activation", String(configuration.activationDuration));
@@ -527,9 +547,9 @@ function useStackedLayout(): boolean {
 }
 
 export function App(): React.JSX.Element {
-  const [audioInput] = React.useState(() => new OrbAudioInput());
+  const audioInput = React.useMemo(() => new OrbAudioInput(), [OrbAudioInput]);
   const [audioResetKey, setAudioResetKey] = React.useState(0);
-  const [locale, setLocale] = React.useState<Locale>(readInitialLocale);
+  const locale: Locale = "en";
   const [editorState, setEditorState] = React.useState<OrbEditorState>(readEditorStateFromHash);
   const [renderState, setRenderState] = React.useState<"loading" | "ready" | "error">("loading");
   const [errorMessage, setErrorMessage] = React.useState("");
@@ -541,6 +561,8 @@ export function App(): React.JSX.Element {
   const [codeOpen, setCodeOpen] = React.useState(false);
   const [codePlatform, setCodePlatform] = React.useState<"web" | "swift">("web");
   const [copiedPlatform, setCopiedPlatform] = React.useState<"web" | "swift" | "error" | null>(null);
+  const [exportModule, setExportModule] = React.useState<ExportModule | null>(null);
+  const [exportError, setExportError] = React.useState("");
   const [codeState, setCodeState] = React.useState<OrbEditorState | null>(null);
   const canvasRef = React.useRef<HTMLCanvasElement | null>(null);
   const stageRef = React.useRef<HTMLElement | null>(null);
@@ -581,17 +603,29 @@ export function App(): React.JSX.Element {
   );
 
   const webCode = React.useMemo(
-    () => (codeState
-      ? createWebExport(codeState.configuration, codeState.activeState)
+    () => (codeState && exportModule && codePlatform === "web"
+      ? exportModule.createWebExport(codeState.configuration, codeState.activeState)
       : ""),
-    [codeState],
+    [codeState, exportModule, codePlatform],
   );
   const swiftCode = React.useMemo(
-    () => (codeState
-      ? createSwiftExport(codeState.configuration, codeState.activeState)
+    () => (codeState && exportModule && codePlatform === "swift"
+      ? exportModule.createSwiftExport(codeState.configuration, codeState.activeState)
       : ""),
-    [codeState],
+    [codeState, exportModule, codePlatform],
   );
+
+  React.useEffect(() => {
+    if (!codeOpen || exportModule) return;
+    let cancelled = false;
+    setExportError("");
+    import("./code-export").then((module) => {
+      if (!cancelled) setExportModule(module);
+    }).catch(() => {
+      if (!cancelled) setExportError("Unable to load export tools. Close and reopen to retry.");
+    });
+    return () => { cancelled = true; };
+  }, [codeOpen, exportModule]);
 
   renderTargetRef.current = {
     state: editorState.activeState,
@@ -601,14 +635,9 @@ export function App(): React.JSX.Element {
   };
 
   React.useEffect(() => {
-    document.documentElement.lang = locale === "zh" ? "zh-CN" : "en";
-    document.title = uiCopy[locale].documentTitle;
-    try {
-      window.localStorage.setItem(localeStorageKey, locale);
-    } catch (error) {
-      console.warn("Unable to save the interface language.", error);
-    }
-  }, [locale]);
+    document.documentElement.lang = "en";
+    document.title = uiCopy.en.documentTitle;
+  }, []);
 
   React.useEffect(() => {
     const timeout = window.setTimeout(() => {
@@ -643,12 +672,13 @@ export function App(): React.JSX.Element {
       getTarget: () => renderTargetRef.current,
       getAudioBands: (dt) => audioInput.read(dt),
       onError: (error) => {
+        console.error("Figure renderer failed:", error);
         setErrorMessage(error.message);
         setRenderState("error");
       },
       onReady: () => setRenderState((current) => (current === "ready" ? current : "ready")),
     });
-  }, []);
+  }, [audioInput]);
 
   React.useEffect(() => {
     const stage = stageRef.current;
@@ -698,6 +728,24 @@ export function App(): React.JSX.Element {
       activeState: current.activeState,
       configuration: {
         ...createPresetOrbStateConfiguration(style),
+        shared: {
+          ...createPresetOrbStateConfiguration(style).shared,
+          shape: current.configuration.shared.shape,
+          asciiEnabled: current.configuration.shared.asciiEnabled,
+          asciiSize: current.configuration.shared.asciiSize,
+          starsEnabled: current.configuration.shared.starsEnabled,
+          starsDensity: current.configuration.shared.starsDensity,
+          starsBrightness: current.configuration.shared.starsBrightness,
+          auraEnabled: current.configuration.shared.auraEnabled,
+          auraAudioEnabled: current.configuration.shared.auraAudioEnabled,
+          auraIntensity: current.configuration.shared.auraIntensity,
+          auraSize: current.configuration.shared.auraSize,
+          auraSpeed: current.configuration.shared.auraSpeed,
+          auraColor: current.configuration.shared.auraColor,
+          auraColorB: current.configuration.shared.auraColorB,
+          auraColorC: current.configuration.shared.auraColorC,
+          auraEffect: current.configuration.shared.auraEffect,
+        },
         activationDuration: current.configuration.activationDuration,
         transitionDuration: current.configuration.transitionDuration,
       },
@@ -870,6 +918,10 @@ export function App(): React.JSX.Element {
                     >
                       <img
                         alt=""
+                        loading="lazy"
+                        decoding="async"
+                        width={240}
+                        height={180}
                         aria-hidden="true"
                         className={`preset-preview${
                           compactPreviewStyles.has(style) ? " preset-preview--compact" : ""
@@ -889,20 +941,12 @@ export function App(): React.JSX.Element {
           className="orb-stage"
           aria-label={previewMode === "scene" ? copy.scenePreview : copy.orbPreview}
           data-preview-mode={previewMode}
+          data-aura-enabled={params.auraEnabled ? "true" : "false"}
           ref={stageRef}
           style={{ "--preview-scale": previewScale } as React.CSSProperties}
         >
-          <div className="language-control" data-stage-controls>
-            <SegmentedControl
-              ariaLabel={copy.switchLanguage}
-              name={copy.switchLanguage}
-              onValueChange={(value) => {
-                if (value === "zh" || value === "en") setLocale(value);
-              }}
-              options={localeOptions}
-              value={locale}
-            />
-          </div>
+          <style>{starfieldStyles}</style>
+          {params.starsEnabled && <Starfield count={params.starsDensity} brightness={params.starsBrightness} />}
           <div className="stage-mode-control" data-stage-controls>
             <SegmentedControl
               ariaLabel={copy.switchPreviewMode}
@@ -918,7 +962,9 @@ export function App(): React.JSX.Element {
                 <img className="orb-poster" src={posterUrl} alt={copy.staticOrbPreview} />
               ) : null}
               <canvas
-                aria-label={copy.animatedOrbPreview}
+                aria-label={`${copy.animatedOrbPreview}. Drag to rotate in 3D. Arrow keys rotate; double-click or Escape resets the view.`}
+                title="Drag to rotate in 3D · Double-click to reset"
+                tabIndex={0}
                 className="orb-canvas"
                 data-ready={renderState === "ready" ? "true" : undefined}
                 ref={canvasRef}
@@ -932,9 +978,10 @@ export function App(): React.JSX.Element {
               {renderState === "error" ? (
                 <p
                   className="orb-error"
-                  title={locale === "zh" ? errorMessage : copy.renderErrorTitle}
+                  title={errorMessage || copy.renderErrorTitle}
                 >
                   {copy.renderFallback}
+                  {errorMessage ? <span className="orb-error-detail">{errorMessage}</span> : null}
                 </p>
               ) : null}
             </div>
@@ -955,22 +1002,7 @@ export function App(): React.JSX.Element {
               <CodeIcon data-icon="inline-start" />
               {copy.copyCode}
             </Button>
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <a
-                    aria-label={copy.viewSource}
-                    className={`${buttonVariants({ size: "icon-lg", variant: "outline" })} github-link`}
-                    href="https://github.com/LerSent001/orb"
-                    rel="noopener noreferrer"
-                    target="_blank"
-                  />
-                }
-              >
-                <GithubLogoIcon aria-hidden="true" weight="fill" />
-              </TooltipTrigger>
-              <TooltipContent side="top">{copy.viewSource}</TooltipContent>
-            </Tooltip>
+
           </div>
         </section>
 
@@ -987,7 +1019,62 @@ export function App(): React.JSX.Element {
             resetLabel={copy.resetControls}
             title={copy.orbControls}
           >
-            <AudioControls key={audioResetKey} input={audioInput} style={params.style} locale={locale} />
+            <PanelSection title={"Shape"}>
+              <div className="grid grid-cols-2 gap-2" role="group" aria-label={"Shape"}>
+                {shapeNames.map((shape, index) => (
+                  <Button
+                    key={shape}
+                    aria-pressed={params.shape === shape}
+                    variant={params.shape === shape ? "default" : "outline"}
+                    onClick={() => setParam("shape", shape)}
+                  >
+                    {(["Orb", "Cube", "Rhomboid", "Trapezoid", "Triangle", "Pentagon", "Hexagon", "Octagon", "Flower of Life", "Seed of Life", "Vesica Piscis", "Metatron’s Cube", "Star", "7-Point Star"])[index]}
+                  </Button>
+                ))}
+              </div>
+            </PanelSection>
+            <PanelSection title="ASCII">
+              <Switch checked={params.asciiEnabled} name="Enable ASCII"
+                onCheckedChange={checked => setParam("asciiEnabled", checked)} />
+              {params.asciiEnabled && renderSlider("asciiSize")}
+            </PanelSection>
+            <PanelSection title={"Star Background"}>
+              <Switch checked={params.starsEnabled} name={"Enable Stars"}
+                onCheckedChange={checked => setParam("starsEnabled", checked)} />
+              {params.starsEnabled && <>
+                {renderSlider("starsDensity")}
+                {renderSlider("starsBrightness")}
+              </>}
+            </PanelSection>
+            <PanelSection title={"Aura"}>
+              <Switch
+                checked={params.auraEnabled}
+                name={"Enable Aura"}
+                onCheckedChange={(checked) => setParam("auraEnabled", checked)}
+              />
+              {params.auraEnabled ? (
+                <>
+                  <div className="grid grid-cols-2 gap-2" role="group" aria-label={"Aura Effect"}>
+                    {auraEffectNames.map((effect, index) => (
+                      <Button key={effect} aria-pressed={params.auraEffect === effect}
+                        variant={params.auraEffect === effect ? "default" : "outline"}
+                        onClick={() => setParam("auraEffect", effect)}>
+                        {(["Flow", "Pulse", "Waves", "Spiral"])[index]}
+                      </Button>
+                    ))}
+                  </div>
+                  <Switch checked={params.auraAudioEnabled}
+                    name={"React to Audio"}
+                    onCheckedChange={checked => setParam("auraAudioEnabled", checked)} />
+                  {renderSlider("auraIntensity")}
+                  {renderSlider("auraSize")}
+                  {renderSlider("auraSpeed")}
+                  {colorControl(<Color inputs={[colorInput("auraColor"), colorInput("auraColorB")]} />)}
+                  {colorControl(<Color {...colorInput("auraColorC")} />)}
+                </>
+              ) : null}
+            </PanelSection>
+            <AudioControls key={audioResetKey} input={audioInput} style={params.style} auraResponsive={params.auraEnabled && params.auraAudioEnabled} />
             {previewMode === "scene" ? (
               <PanelSection
                 collapsed={sectionState.isCollapsed("scene")}
@@ -1198,7 +1285,7 @@ export function App(): React.JSX.Element {
                 <TabsTrigger value="web">Web</TabsTrigger>
                 <TabsTrigger value="swift">SwiftUI</TabsTrigger>
               </TabsList>
-              <Button onClick={copyCode} type="button" variant="outline">
+              <Button disabled={!exportModule || !!exportError} onClick={copyCode} type="button" variant="outline">
                 <CopySimpleIcon data-icon="inline-start" />
                 {copiedPlatform === "error"
                   ? copy.copyFailed
@@ -1208,10 +1295,10 @@ export function App(): React.JSX.Element {
               </Button>
             </div>
             <TabsContent className="code-tab-content" value="web">
-              <pre className="code-preview" aria-label={copy.webCode}><code>{webCode}</code></pre>
+              <pre className="code-preview" aria-label={copy.webCode}><code>{exportError || (exportModule ? webCode : "Loading export tools…")}</code></pre>
             </TabsContent>
             <TabsContent className="code-tab-content" value="swift">
-              <pre className="code-preview" aria-label={copy.swiftCode}><code>{swiftCode}</code></pre>
+              <pre className="code-preview" aria-label={copy.swiftCode}><code>{exportError || (exportModule ? swiftCode : "Loading export tools…")}</code></pre>
             </TabsContent>
           </Tabs>
         </SheetContent>

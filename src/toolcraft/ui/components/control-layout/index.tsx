@@ -127,11 +127,11 @@ export function ControlSectionHeader({
 }): React.JSX.Element {
   const titleText = getControlSectionHeaderText(children);
   const resolvedCollapseLabel = collapsed
-    ? (expandLabel ?? `展开${titleText}`)
-    : (collapseLabel ?? `收起${titleText}`);
+    ? (expandLabel ?? `Expand ${titleText}`)
+    : (collapseLabel ?? `Collapse ${titleText}`);
   const collapseButtonLabel = collapseLabel || expandLabel
     ? resolvedCollapseLabel
-    : `${resolvedCollapseLabel}分组`;
+    : `${resolvedCollapseLabel} group`;
   const toggleCollapsed = React.useCallback(() => {
     if (!collapsible) {
       return;
@@ -209,7 +209,7 @@ export function ControlSectionHeader({
 function getControlSectionHeaderText(children: React.ReactNode): string {
   const text = getReactNodeText(children).trim();
 
-  return text.length > 0 ? text : "分组";
+  return text.length > 0 ? text : "Group";
 }
 
 function getReactNodeText(node: React.ReactNode): string {

@@ -4,12 +4,15 @@ import { PanelSection } from "@/toolcraft/ui/components/panel/panel-section";
 import { audioStyleStrengths, type OrbAudioInput } from "./orb-audio";
 import type { StyleName } from "./presets";
 
-export function AudioControls({ input, style, locale }: { input: OrbAudioInput; style: StyleName; locale: "zh" | "en" }) {
-  const zh = locale === "zh";
-  const supported = audioStyleStrengths[style] !== undefined;
+export function AudioControls({ input, style, auraResponsive = false }: { input: OrbAudioInput; style: StyleName; auraResponsive?: boolean }) {
+  const materialSupported = audioStyleStrengths[style] !== undefined;
+  const supported = materialSupported || auraResponsive;
   const [source, setSource] = React.useState<"off" | "pending" | "mic" | "file">("off");
   const [error, setError] = React.useState(false);
-  const [gain, setGain] = React.useState(70);
+  const [gain, setGain] = React.useState(() => Math.round(input.gain * 100));
+  const [smoothing, setSmoothing] = React.useState(() => Math.round(input.smoothing * 100));
+  const [bandGain, setBandGain] = React.useState(() => ({ ...input.bandGain }));
+  const bandMeters = React.useRef<Partial<Record<"low" | "mid" | "high", HTMLMeterElement>>>({});
   const fileRef = React.useRef<HTMLInputElement>(null);
   const playerRef = React.useRef<HTMLDivElement>(null);
   const meterRef = React.useRef<HTMLMeterElement>(null);
@@ -28,9 +31,12 @@ export function AudioControls({ input, style, locale }: { input: OrbAudioInput; 
   }, [supported, stop]);
   React.useEffect(() => {
     let raf = 0;
-    input.gain = 0.7;
     const paint = () => {
       if (meterRef.current) meterRef.current.value = input.level;
+      for (const band of ["low", "mid", "high"] as const) {
+        const meter = bandMeters.current[band];
+        if (meter) meter.value = input.bands[band];
+      }
       raf = requestAnimationFrame(paint);
     };
     paint();
@@ -62,35 +68,58 @@ export function AudioControls({ input, style, locale }: { input: OrbAudioInput; 
     }
   };
 
-  return <PanelSection title={zh ? "声音响应" : "Audio response"}>
+  return <PanelSection title={"Audio response"}>
     <div className="orb-audio-controls">
       <p className="orb-audio-hint">{supported
-        ? (zh ? "声音驱动流动、形变与高光" : "Sound drives motion, shape and highlights")
-        : (zh ? "此预设暂不支持声音响应" : "Audio response is unavailable for this preset")}</p>
+        ? (!materialSupported ? ("Sound drives aura size, brightness and motion") : ("Bass drives broad waves, mids drive pulses, treble adds fine vibration"))
+        : ("Audio response is unavailable for this preset")}</p>
       {supported && <>
         <div className="orb-audio-actions">
-          <Button variant="outline" aria-pressed={source === "mic"} disabled={source === "pending"} onClick={() => void start()}>{zh ? "麦克风" : "Microphone"}</Button>
-          <Button variant="outline" disabled={source === "pending"} onClick={() => fileRef.current?.click()}>{zh ? "音频文件" : "Audio file"}</Button>
-          {source !== "off" && <Button variant="outline" onClick={stop}>{zh ? "关闭" : "Stop"}</Button>}
+          <Button variant="outline" aria-pressed={source === "mic"} disabled={source === "pending"} onClick={() => void start()}>{"Microphone"}</Button>
+          <Button variant="outline" disabled={source === "pending"} onClick={() => fileRef.current?.click()}>{"Audio file"}</Button>
+          {source !== "off" && <Button variant="outline" onClick={stop}>{"Stop"}</Button>}
         </div>
         <input ref={fileRef} type="file" accept="audio/*,.mp3,.wav,.m4a,.ogg,.flac" hidden onChange={(event) => {
           const file = event.target.files?.[0];
           event.target.value = "";
           if (file) void start(file);
         }} />
-        <label className="orb-audio-gain">{zh ? "响应强度" : "Sensitivity"}<output>{gain}%</output>
-          <input aria-label={zh ? "响应强度" : "Sensitivity"} type="range" min="0" max="100" value={gain} onChange={(event) => {
+        <label className="orb-audio-gain">{"Sensitivity"}<output>{gain}%</output>
+          <input aria-label={"Sensitivity"} type="range" min="0" max="200" value={gain} onChange={(event) => {
             const value = +event.target.value;
             setGain(value);
             input.gain = value / 100;
           }} />
         </label>
-        <meter ref={meterRef} min="0" max="1" value="0" aria-label={zh ? "输入音量" : "Input level"} />
+        <label className="orb-audio-gain">{"Smoothness"}<output>{smoothing}%</output>
+          <input aria-label={"Smoothness"} type="range" min="0" max="100" value={smoothing} onChange={(event) => {
+            const value = Number(event.target.value);
+            setSmoothing(value);
+            input.smoothing = value / 100;
+          }} />
+        </label>
+        <div className="orb-audio-bands">
+          {(["low", "mid", "high"] as const).map((band, index) => {
+            const label = (["Bass", "Mids", "Treble"])[index];
+            return <div key={band} className="orb-audio-band">
+              <label className="orb-audio-gain">{label}<output>{Math.round(bandGain[band] * 100)}%</output>
+                <input aria-label={`${label} response`} type="range" min="0" max="200" value={Math.round(bandGain[band] * 100)} onChange={(event) => {
+                  const value = Number(event.target.value) / 100;
+                  input.bandGain[band] = value;
+                  setBandGain(current => ({ ...current, [band]: value }));
+                }} />
+              </label>
+              <meter ref={element => { if (element) bandMeters.current[band] = element; else delete bandMeters.current[band]; }} min="0" max="1" value="0" aria-label={`${label} level`} />
+            </div>;
+          })}
+        </div>
+        <span className="orb-audio-hint">{"Input level"}</span>
+        <meter ref={meterRef} min="0" max="1" value="0" aria-label={"Input level"} />
       </>}
       <div ref={playerRef} className="orb-audio-player" hidden={!supported || (source !== "file" && source !== "pending")} />
       <p className="orb-audio-hint" role="status">{error
-        ? (zh ? "无法打开声音，请检查麦克风权限或更换音频文件。" : "Unable to open audio. Check microphone permission or try another file.")
-        : source === "pending" ? (zh ? "正在打开声音…" : "Opening audio…") : source === "mic" ? (zh ? "正在使用麦克风" : "Microphone is active") : ""}</p>
+        ? ("Unable to open audio. Check microphone permission or try another file.")
+        : source === "pending" ? ("Opening audio…") : source === "mic" ? ("Microphone is active") : ""}</p>
     </div>
   </PanelSection>;
 }

@@ -11,9 +11,35 @@ export type StyleName =
   | "violetEmber"
   | "refractiveBlob"
   | "particleRibbon"
-  | "chromaticMetal";
+  | "chromaticMetal"
+  | "galaxyCore"
+  | "mysticMist"
+  | "crystalLight";
+
+export const shapeNames = ["orb", "cube", "rhomboid", "trapezoid", "triangle", "pentagon", "hexagon", "octagon", "flowerOfLife", "seedOfLife", "vesicaPiscis", "metatron", "star", "star7"] as const;
+export type ShapeName = (typeof shapeNames)[number];
+export const shapeIndexes: Record<ShapeName, number> = { orb: 0, cube: 1, rhomboid: 2, trapezoid: 3, triangle: 4, pentagon: 5, hexagon: 6, octagon: 7, flowerOfLife: 8, seedOfLife: 9, vesicaPiscis: 10, metatron: 11, star: 12, star7: 13 };
+
+export const auraEffectNames = ["flow", "pulse", "waves", "spiral"] as const;
+export type AuraEffect = (typeof auraEffectNames)[number];
+export const auraEffectIndexes: Record<AuraEffect, number> = { flow: 0, pulse: 1, waves: 2, spiral: 3 };
 
 export type OrbParams = {
+  shape: ShapeName;
+  asciiEnabled: boolean;
+  asciiSize: number;
+  starsEnabled: boolean;
+  starsDensity: number;
+  starsBrightness: number;
+  auraEnabled: boolean;
+  auraAudioEnabled: boolean;
+  auraIntensity: number;
+  auraSize: number;
+  auraSpeed: number;
+  auraColor: string;
+  auraColorB: string;
+  auraColorC: string;
+  auraEffect: AuraEffect;
   style: StyleName;
   glassEnabled: boolean;
   speed: number;
@@ -72,6 +98,21 @@ export const orbRadiusRange = {
 type StylePreset = Omit<OrbParams, "style">;
 
 const basePreset: StylePreset = {
+  shape: "orb",
+  asciiEnabled: false,
+  asciiSize: 10,
+  starsEnabled: false,
+  starsDensity: 140,
+  starsBrightness: 0.8,
+  auraEnabled: false,
+  auraAudioEnabled: false,
+  auraIntensity: 0.65,
+  auraSize: 0.22,
+  auraSpeed: 0.6,
+  auraColor: "#9270FF",
+  auraColorB: "#35D9FF",
+  auraColorC: "#FF75B5",
+  auraEffect: "flow",
   glassEnabled: true,
   speed: 1,
   radius: 0.72,
@@ -455,9 +496,37 @@ export const stylePresets: Record<StyleName, StylePreset> = {
     canvasColor: "#050606",
     glowColor: "#BDEFFF",
   },
+  galaxyCore: {
+    ...basePreset,
+    speed: 0.65, zoom: 0.4, warp: 2.4, ridgeAmt: 0.55, sharp: 2,
+    shade: 0.12, sheen: 0.18, gloss: 0.35, exposure: 1.2,
+    glassOpacity: 0.38, shellMidAlpha: 0.14, shellEdgeAlpha: 0.2,
+    colorA: "#06091F", colorB: "#493AB7", colorC: "#C75BD8", colorD: "#8FEAFF",
+    canvasColor: "#020409", glowColor: "#C75BD8",
+    shellMid: "#8FEAFF", shellEdge: "#493AB7",
+  },
+  mysticMist: {
+    ...basePreset,
+    speed: 0.65, zoom: 0.4, warp: 2.4, ridgeAmt: 0.55, sharp: 2,
+    shade: 0.12, sheen: 0.18, gloss: 0.35, exposure: 1.2,
+    glassOpacity: 0.38, shellMidAlpha: 0.14, shellEdgeAlpha: 0.2,
+    colorA: "#071B22", colorB: "#216773", colorC: "#63B6B3", colorD: "#DCF9E8",
+    canvasColor: "#020409", glowColor: "#63B6B3",
+    shellMid: "#DCF9E8", shellEdge: "#216773",
+  },
+  crystalLight: {
+    ...basePreset,
+    speed: 0.65, zoom: 0.4, warp: 2.4, ridgeAmt: 0.55, sharp: 2,
+    shade: 0.12, sheen: 0.18, gloss: 0.35, exposure: 1.2,
+    glassOpacity: 0.38, shellMidAlpha: 0.14, shellEdgeAlpha: 0.2,
+    colorA: "#08182D", colorB: "#2155A2", colorC: "#54D9EE", colorD: "#F3FBFF",
+    canvasColor: "#020409", glowColor: "#54D9EE",
+    shellMid: "#F3FBFF", shellEdge: "#2155A2",
+  },
 };
 
 export const styleNames: readonly StyleName[] = [
+  "galaxyCore", "mysticMist", "crystalLight",
   "siri",
   "voiceWave",
   "particleRibbon",
@@ -474,6 +543,7 @@ export const styleNames: readonly StyleName[] = [
 ];
 
 export const styleFlowIndexes: Record<StyleName, number> = {
+  galaxyCore: 25, mysticMist: 26, crystalLight: 27,
   siri: 9,
   voiceWave: 19,
   aurora: 10,
@@ -500,6 +570,6 @@ export const initialParams: OrbParams = {
 
 for (const name of styleNames) {
   if (!Number.isInteger(styleFlowIndexes[name])) {
-    throw new Error(`预设缺少流场映射：${name}`);
+    throw new Error(`Preset is missing a flow mapping：${name}`);
   }
 }
