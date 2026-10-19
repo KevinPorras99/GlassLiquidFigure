@@ -5,9 +5,14 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "../../primitives/popover";
-import { StyleGuideColorPicker } from "./style-guide-color-picker";
 import { cn } from "../../../lib/utils";
-import { useCallback, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useRef, useState } from "react";
+
+const StyleGuideColorPicker = lazy(() =>
+  import("./style-guide-color-picker").then((module) => ({
+    default: module.StyleGuideColorPicker,
+  })),
+);
 
 type ColorPickerPopoverSize = "default" | "sm";
 
@@ -103,6 +108,7 @@ export function ColorPickerPopover({
         finalFocus={false}
         sideOffset={6}
       >
+        {open && <Suspense fallback={<div role="status" className="p-3 text-xs">Loading color picker…</div>}>
         <StyleGuideColorPicker
           channelLabel={colorChannelLabel}
           cssColorValueLabel={cssColorValueLabel}
@@ -115,6 +121,7 @@ export function ColorPickerPopover({
           onChange={onColorChange}
           onCommit={commitColor}
         />
+        </Suspense>}
       </PopoverContent>
     </Popover>
   );

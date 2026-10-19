@@ -26,6 +26,8 @@ export const auraEffectIndexes: Record<AuraEffect, number> = { flow: 0, pulse: 1
 
 export type OrbParams = {
   shape: ShapeName;
+  autoRotate: boolean;
+  rotationSpeed: number;
   asciiEnabled: boolean;
   asciiSize: number;
   starsEnabled: boolean;
@@ -99,6 +101,8 @@ type StylePreset = Omit<OrbParams, "style">;
 
 const basePreset: StylePreset = {
   shape: "orb",
+  autoRotate: false,
+  rotationSpeed: 0.35,
   asciiEnabled: false,
   asciiSize: 10,
   starsEnabled: false,

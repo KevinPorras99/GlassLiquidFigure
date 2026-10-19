@@ -5,7 +5,6 @@ import {
   type OrbRenderTarget,
 } from "./orb-states";
 import { orbUniformFloatCount, writeOrbUniforms } from "./orb-uniforms";
-import { orbShaderSource } from "./shader-source";
 import { applyAudioUniforms, type AudioBands } from "./orb-audio";
 
 export type OrbRendererOptions = {
@@ -90,7 +89,12 @@ export function createOrbRenderer({
       throw new Error("This browser does not support WebGPU");
     }
 
-    const adapter = await navigator.gpu.requestAdapter();
+    // Download shader code while the browser acquires the GPU adapter.
+    // Keeping it outside the entry bundle lets the editor render first.
+    const [adapter, { orbShaderSource }] = await Promise.all([
+      navigator.gpu.requestAdapter(),
+      import("./shader-source"),
+    ]);
     if (disposed) return;
     if (!adapter) {
       throw new Error("No compatible WebGPU adapter found");
@@ -297,6 +301,11 @@ export function createOrbRenderer({
           params,
           canvas.clientWidth / Math.max(canvas.parentElement?.clientWidth ?? canvas.clientWidth, 1),
         );
+        // Pause automatic motion while dragging so the pointer stays in control.
+        if (params.autoRotate) {
+          view3d = true;
+          if (!drag) yaw = (yaw + frameDelta * params.rotationSpeed) % (Math.PI * 2);
+        }
         // Unused shape lanes hold the preview camera without changing saved presets.
         values[137] = pitch;
         values[138] = yaw;

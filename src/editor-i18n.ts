@@ -52,6 +52,7 @@ export const numericLabels: Record<Locale, Record<NumericKey, string>> = {
     starsDensity: "Star Count",
     starsBrightness: "Star Brightness",
     asciiSize: "Character Size",
+    rotationSpeed: "Rotation Speed",
     speed: "Speed",
     radius: "Radius",
     contourDeform: "Contour Motion",

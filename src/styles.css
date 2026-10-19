@@ -589,24 +589,29 @@ input {
   }
 }
 
+.mobile-panel-navigation {
+  display: none;
+}
+
 @media (max-width: 900px) {
   html,
   body,
   #root {
-    height: auto;
+    height: 100%;
     min-height: 100%;
   }
 
   body {
-    overflow: auto;
+    overflow: hidden;
   }
 
   .orb-editor {
     display: grid;
     min-height: 100svh;
-    height: auto;
+    height: 100svh;
+    height: 100dvh;
     grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: minmax(340px, 48svh) minmax(420px, 58svh) minmax(520px, 62svh);
+    grid-template-rows: minmax(0, 38svh) auto minmax(0, 1fr);
     transition: none;
   }
 
@@ -615,19 +620,51 @@ input {
   }
 
   .preset-dock {
-    grid-row: 2;
-    height: 58svh;
+    grid-row: 3;
+    height: 100%;
     padding: 0 10px 10px;
   }
 
   .panel-dock {
     grid-row: 3;
-    height: 62svh;
+    height: 100%;
     padding: 0 10px 10px;
   }
 
   .stage-toolbar {
     bottom: 12px;
+  }
+
+  .mobile-panel-navigation {
+    grid-row: 2;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 8px;
+    padding: 8px 10px;
+  }
+
+  .mobile-panel-navigation button,
+  .panel-dock button[data-slot="button"],
+  .preset-dock button[data-slot="button"] {
+    min-height: 44px;
+  }
+
+  .orb-editor[data-mobile-panel="controls"] .preset-dock,
+  .orb-editor[data-mobile-panel="presets"] .panel-dock {
+    display: none;
+  }
+
+  .panel-dock [data-slot="slider"] > div {
+    min-height: 44px;
+  }
+
+  .panel-dock input {
+    font-size: 16px;
+  }
+
+  .panel-dock,
+  .preset-dock {
+    padding-bottom: max(10px, env(safe-area-inset-bottom));
   }
 
 

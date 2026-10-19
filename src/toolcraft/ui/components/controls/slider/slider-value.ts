@@ -11,8 +11,11 @@ export function getDecimalPrecision(step: number): number {
 }
 
 export function formatSliderValue(value: number, step: number): string {
-  const decimals = getDecimalPrecision(step);
-  const rounded = Number(value.toFixed(decimals));
+  // Shared by sliders and range controls; old editor state may omit new fields.
+  const safeValue = typeof value === "number" && Number.isFinite(value) ? value : 0;
+  const safeStep = typeof step === "number" && Number.isFinite(step) && step > 0 ? step : 1;
+  const decimals = Math.min(100, getDecimalPrecision(safeStep));
+  const rounded = Number(safeValue.toFixed(decimals));
 
   return String(rounded);
 }

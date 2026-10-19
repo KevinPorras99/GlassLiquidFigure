@@ -303,8 +303,18 @@ fn solidDistance(p: vec3<f32>) -> f32 {
     let q = abs(p) - vec3<f32>(0.7);
     return length(max(q, vec3<f32>(0.0))) + min(max(q.x, max(q.y, q.z)), 0.0) - 0.035;
   }
-  let d = vec2<f32>((glsShapeDistance(p.xy) - 1.0) * 0.45, abs(p.z) - 0.28);
-  return min(max(d.x, d.y), 0.0) + length(max(d, vec2<f32>(0.0))) - 0.025;
+  // Sacred outlines multiply their 2D distance by 12 for coverage. Undo
+  // that gain before ray marching so steps cannot jump over the thin lines.
+  let sacred = (u.shape.x > 7.5 && u.shape.x < 9.5) || (u.shape.x > 10.5 && u.shape.x < 11.5);
+  var planarDistance: f32;
+  if (sacred) { planarDistance = glsSacredDistance(p.xy) / 12.0; }
+  else { planarDistance = (glsShapeDistance(p.xy) - 1.0) * 0.45; }
+  // Keep the outline's original width and give it matching shallow depth.
+  // The polygon bevel would otherwise more than double these thin strokes.
+  let depth = select(0.28, 0.016, sacred);
+  let bevel = select(0.025, 0.002, sacred);
+  let d = vec2<f32>(planarDistance, abs(p.z) - depth);
+  return min(max(d.x, d.y), 0.0) + length(max(d, vec2<f32>(0.0))) - bevel;
 }
 fn solidColor(in: VOut) -> vec4<f32> {
   let screen = (in.uv * 2.0 - 1.0) * u.size / glsRenderMinSize();

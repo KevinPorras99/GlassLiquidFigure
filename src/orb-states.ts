@@ -348,11 +348,17 @@ export function resolveOrbStateParams(
   const shared = Object.fromEntries(
     Object.entries(configuration.shared).filter(([, value]) => value !== undefined),
   ) as OrbSharedParams;
-  return {
-    ...stylePresets[shared.style],
-    ...shared,
-    ...configuration.profiles[state],
-  };
+  const defaults = stylePresets[shared.style] ?? stylePresets.siri;
+  const params = { ...defaults, ...shared, ...configuration.profiles[state] };
+  // Both shared settings and state profiles can survive an older editor version.
+  for (const key of Object.keys(defaults) as Array<keyof typeof defaults>) {
+    const fallback = defaults[key];
+    const value = params[key];
+    if (typeof value !== typeof fallback || (typeof value === "number" && !Number.isFinite(value))) {
+      Object.assign(params, { [key]: fallback });
+    }
+  }
+  return params;
 }
 
 export function updateOrbStateParam<Key extends keyof OrbParams>(

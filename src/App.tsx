@@ -164,6 +164,7 @@ const chromaticMetalStyles: readonly StyleName[] = ["chromaticMetal"];
 const particleRibbonStyles: readonly StyleName[] = ["particleRibbon"];
 
 const numericSpecs: readonly NumericSpec[] = [
+  { key: "rotationSpeed", min: 0.1, max: 2, step: 0.05 },
   { key: "asciiSize", min: 5, max: 24, step: 1 },
   { key: "starsDensity", min: 20, max: 300, step: 1 },
   { key: "starsBrightness", min: 0, max: 1, step: 0.01 },
@@ -393,6 +394,7 @@ function readEditorStateFromHash(): OrbEditorState {
   const shape = search.get("shape");
   if (shape && shapeNames.includes(shape as ShapeName)) params.shape = shape as ShapeName;
 
+  params.autoRotate = search.get("autoRotate") === "1";
   params.asciiEnabled = search.get("ascii") === "1";
   params.starsEnabled = search.get("stars") === "1";
   params.auraEnabled = search.get("aura") === "1";
@@ -483,6 +485,7 @@ function writeHash(
   search.set("effect", "orb-glass-liquid");
   search.set("style", params.style);
   search.set("shape", params.shape);
+  search.set("autoRotate", params.autoRotate ? "1" : "0");
   search.set("ascii", params.asciiEnabled ? "1" : "0");
   search.set("stars", params.starsEnabled ? "1" : "0");
   search.set("aura", params.auraEnabled ? "1" : "0");
@@ -555,6 +558,7 @@ export function App(): React.JSX.Element {
   const [errorMessage, setErrorMessage] = React.useState("");
   const [presetCollapsed, setPresetCollapsed] = React.useState(false);
   const [propertiesCollapsed, setPropertiesCollapsed] = React.useState(false);
+  const [mobilePanel, setMobilePanel] = React.useState<"controls" | "presets">("controls");
   const [previewScale, setPreviewScale] = React.useState(1);
   const [previewMode, setPreviewMode] = React.useState<PreviewMode>(readPreviewModeFromHash);
   const [sceneText, setSceneText] = React.useState(readSceneTextFromHash);
@@ -731,6 +735,8 @@ export function App(): React.JSX.Element {
         shared: {
           ...createPresetOrbStateConfiguration(style).shared,
           shape: current.configuration.shared.shape,
+          autoRotate: current.configuration.shared.autoRotate,
+          rotationSpeed: current.configuration.shared.rotationSpeed,
           asciiEnabled: current.configuration.shared.asciiEnabled,
           asciiSize: current.configuration.shared.asciiSize,
           starsEnabled: current.configuration.shared.starsEnabled,
@@ -892,8 +898,23 @@ export function App(): React.JSX.Element {
         className="orb-editor"
         data-preset-collapsed={String(!stackedLayout && presetCollapsed)}
         data-properties-collapsed={String(!stackedLayout && propertiesCollapsed)}
+        data-mobile-panel={mobilePanel}
       >
-        <aside className="preset-dock" aria-label={copy.presets}>
+        <nav className="mobile-panel-navigation" aria-label={copy.orbControls}>
+          <Button type="button" aria-pressed={mobilePanel === "controls"}
+            aria-controls="figure-controls-panel"
+            variant={mobilePanel === "controls" ? "default" : "outline"}
+            onClick={() => setMobilePanel("controls")}>
+            {copy.orbControls}
+          </Button>
+          <Button type="button" aria-pressed={mobilePanel === "presets"}
+            aria-controls="figure-presets-panel"
+            variant={mobilePanel === "presets" ? "default" : "outline"}
+            onClick={() => setMobilePanel("presets")}>
+            {copy.presets}
+          </Button>
+        </nav>
+        <aside id="figure-presets-panel" className="preset-dock" aria-label={copy.presets}>
           <Panel
             className="preset-panel h-full max-h-none w-full rounded-lg"
             collapsed={presetCollapsed}
@@ -1006,7 +1027,7 @@ export function App(): React.JSX.Element {
           </div>
         </section>
 
-        <aside className="panel-dock" aria-label={copy.orbControls}>
+        <aside id="figure-controls-panel" className="panel-dock" aria-label={copy.orbControls}>
           <Panel
             className="orb-editor-panel h-full max-h-none w-full rounded-lg"
             collapsed={propertiesCollapsed}
@@ -1032,6 +1053,11 @@ export function App(): React.JSX.Element {
                   </Button>
                 ))}
               </div>
+            </PanelSection>
+            <PanelSection title="3D Rotation">
+              <Switch checked={params.autoRotate} name="Auto Rotate"
+                onCheckedChange={checked => setParam("autoRotate", checked)} />
+              {params.autoRotate && renderSlider("rotationSpeed")}
             </PanelSection>
             <PanelSection title="ASCII">
               <Switch checked={params.asciiEnabled} name="Enable ASCII"

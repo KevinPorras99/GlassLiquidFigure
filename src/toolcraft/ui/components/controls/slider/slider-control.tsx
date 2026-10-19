@@ -58,12 +58,16 @@ export function SliderControl({
   valueLabel,
   variant = "continuous",
 }: SliderControlProps): React.JSX.Element {
-  const [currentValue, setCurrentValue] = React.useState(value);
+  const fallbackValue = Number.isFinite(baseValue) ? baseValue! : min;
+  const safeValue = Number.isFinite(value) ? value : fallbackValue;
+  const [storedValue, setCurrentValue] = React.useState(safeValue);
+  // Fast Refresh can retain slider state from before a parameter existed.
+  const currentValue = Number.isFinite(storedValue) ? storedValue : safeValue;
   const liveHistoryGroupRef = React.useRef<string | null>(null);
 
   React.useEffect(() => {
-    setCurrentValue(value);
-  }, [value]);
+    setCurrentValue(safeValue);
+  }, [safeValue]);
 
   const displayValueLabel =
     valueLabel && currentValue === value

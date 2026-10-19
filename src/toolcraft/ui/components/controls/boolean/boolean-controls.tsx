@@ -25,19 +25,8 @@ function useBooleanControlValue({
   checked: boolean;
   onCheckedChange?: (checked: boolean) => void;
 }): [boolean, (checked: boolean) => void] {
-  const [currentChecked, setCurrentChecked] = React.useState(checked);
-
-  React.useEffect(() => {
-    setCurrentChecked(checked);
-  }, [checked]);
-
-  return [
-    currentChecked,
-    (nextChecked: boolean) => {
-      setCurrentChecked(nextChecked);
-      onCheckedChange?.(nextChecked);
-    },
-  ];
+  // The editor owns this value. Never mirror missing legacy state into Base UI.
+  return [checked === true, (nextChecked: boolean) => onCheckedChange?.(nextChecked === true)];
 }
 
 export function SwitchControl({
