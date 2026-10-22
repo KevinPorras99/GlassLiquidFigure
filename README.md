@@ -7,6 +7,7 @@ A real-time liquid glass figure editor built with React, WebGPU/WGSL, and Toolcr
 
 - 22 editable animated orb presets, including Visionary Fractal and Infinite Gaze with optional random eye blinking
 - Shape selector: orb, cube in perspective, rhomboid, trapezoid, triangle, pentagon, hexagon, octagon, Flower of Life, Seed of Life, Vesica Piscis, and Metatron’s Cube; preserved in share links and Web/Swift exports
+- Mobile Presets and Figure Controls tabs can be tapped again to collapse both panels and maximize the figure preview without stopping audio
 - English interface
 - Spectral Kaleidoscope: mirrored white vapor filaments and cyan orbit strands over black, with fluid motion and Fractal Zoom
 - Prismatic Kaleidoscope: recursive sixfold mirror chambers, violet petals, gold and green latticework, animated white ribbons, and Fractal Zoom

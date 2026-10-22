@@ -664,6 +664,17 @@ input {
     min-height: 44px;
   }
 
+  /* Keep the panels mounted so folding them preserves audio and draft edits. */
+  .orb-editor[data-mobile-panel="none"] {
+    grid-template-rows: minmax(0, 1fr) auto 0;
+  }
+
+  .orb-editor[data-mobile-panel="none"] .mobile-panel-navigation {
+    padding-bottom: max(8px, env(safe-area-inset-bottom));
+  }
+
+  .orb-editor[data-mobile-panel="none"] .preset-dock,
+  .orb-editor[data-mobile-panel="none"] .panel-dock,
   .orb-editor[data-mobile-panel="controls"] .preset-dock,
   .orb-editor[data-mobile-panel="presets"] .panel-dock {
     display: none;

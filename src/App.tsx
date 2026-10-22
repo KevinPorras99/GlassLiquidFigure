@@ -583,7 +583,7 @@ export function App(): React.JSX.Element {
   const [errorMessage, setErrorMessage] = React.useState("");
   const [presetCollapsed, setPresetCollapsed] = React.useState(false);
   const [propertiesCollapsed, setPropertiesCollapsed] = React.useState(false);
-  const [mobilePanel, setMobilePanel] = React.useState<"controls" | "presets">("controls");
+  const [mobilePanel, setMobilePanel] = React.useState<"controls" | "presets" | null>("controls");
   const [previewScale, setPreviewScale] = React.useState(1);
   const [previewMode, setPreviewMode] = React.useState<PreviewMode>(readPreviewModeFromHash);
   const [handBackground, setHandBackground] = React.useState(readHandBackgroundFromHash);
@@ -925,20 +925,24 @@ export function App(): React.JSX.Element {
         className="orb-editor"
         data-preset-collapsed={String(!stackedLayout && presetCollapsed)}
         data-properties-collapsed={String(!stackedLayout && propertiesCollapsed)}
-        data-mobile-panel={mobilePanel}
+        data-mobile-panel={mobilePanel ?? "none"}
       >
         <nav className="mobile-panel-navigation" aria-label={copy.orbControls}>
           <Button type="button" aria-pressed={mobilePanel === "controls"}
             aria-controls="figure-controls-panel"
+            aria-expanded={mobilePanel === "controls"}
             variant={mobilePanel === "controls" ? "default" : "outline"}
-            onClick={() => setMobilePanel("controls")}>
+            onClick={() => setMobilePanel(current => current === "controls" ? null : "controls")}>
             {copy.orbControls}
+            <span aria-hidden="true">{mobilePanel === "controls" ? "−" : "+"}</span>
           </Button>
           <Button type="button" aria-pressed={mobilePanel === "presets"}
             aria-controls="figure-presets-panel"
+            aria-expanded={mobilePanel === "presets"}
             variant={mobilePanel === "presets" ? "default" : "outline"}
-            onClick={() => setMobilePanel("presets")}>
+            onClick={() => setMobilePanel(current => current === "presets" ? null : "presets")}>
             {copy.presets}
+            <span aria-hidden="true">{mobilePanel === "presets" ? "−" : "+"}</span>
           </Button>
         </nav>
         <aside id="figure-presets-panel" className="preset-dock" aria-label={copy.presets}>
