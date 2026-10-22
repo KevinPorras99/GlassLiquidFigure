@@ -1,4 +1,4 @@
-import type { CSSProperties } from "react";
+import { memo, useMemo, type CSSProperties } from "react";
 
 export function createStars(count: number) {
   let seed = 7219;
@@ -22,11 +22,12 @@ function starStyle(star: ReturnType<typeof createStars>[number], brightness: num
   } as CSSProperties;
 }
 
-export function Starfield({ count, brightness }: { count: number; brightness: number }) {
+export const Starfield = memo(function Starfield({ count, brightness }: { count: number; brightness: number }) {
+  const stars = useMemo(() => createStars(count), [count]);
   return <div className="orb-starfield" aria-hidden="true">
-    {createStars(count).map((star, index) => <span key={index} className="orb-star" style={starStyle(star, brightness)} />)}
+    {stars.map((star, index) => <span key={index} className="orb-star" style={starStyle(star, brightness)} />)}
   </div>;
-}
+});
 
 export function createStarfieldMarkup(count: number, brightness: number): string {
   return `<div class="orb-starfield" aria-hidden="true">${createStars(count).map(star =>

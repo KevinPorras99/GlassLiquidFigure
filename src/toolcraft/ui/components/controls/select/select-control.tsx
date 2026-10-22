@@ -5,15 +5,15 @@ import * as React from "react";
 import { ControlFieldLabel } from "../../control-layout";
 import { cn } from "../../../lib/utils";
 import {
-  Field,
-  ScrollFade,
   Select,
   SelectContent,
   SelectGroup,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "../../primitives";
+} from "../../primitives/select";
+import { Field } from "../../primitives/field";
+import { ScrollFade } from "../../primitives/scroll-fade";
 import type { ControlOption } from "../control-types";
 import { useMeasuredElementWidth } from "../use-measured-element-width";
 

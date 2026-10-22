@@ -1,18 +1,22 @@
-# Liquid Orb Editor
+# Liquid Figure Editor
 
-A real-time liquid glass orb editor built with React, WebGPU/WGSL, and Toolcraft UI.
+A real-time liquid glass figure editor built with React, WebGPU/WGSL, and Toolcraft UI.
 
 
 ### Features
 
-- 18 editable animated orb presets, including Visionary Fractal and Infinite Gaze with optional random eye blinking
+- 22 editable animated orb presets, including Visionary Fractal and Infinite Gaze with optional random eye blinking
 - Shape selector: orb, cube in perspective, rhomboid, trapezoid, triangle, pentagon, hexagon, octagon, Flower of Life, Seed of Life, Vesica Piscis, and Metatron’s Cube; preserved in share links and Web/Swift exports
 - English interface
+- Spectral Kaleidoscope: mirrored white vapor filaments and cyan orbit strands over black, with fluid motion and Fractal Zoom
+- Prismatic Kaleidoscope: recursive sixfold mirror chambers, violet petals, gold and green latticework, animated white ribbons, and Fractal Zoom
+- Mandelbrot Bloom: quadratic escape-time fractal with black interiors, blue and gold filaments, and a Fractal Zoom control
+- Fibonacci Geometry: an outward-flowing, rotating golden logarithmic shell growing by phi each quarter turn, with a dedicated Fractal Zoom control, with 34 ivory ribs, 21 blue cavities, and 13 copper scrolls per revolution
 - Controls for color, speed, shape, glass refraction, and outer glow
 - Optional twinkling star background with count and brightness controls, saved in share links and Web/Swift exports
 - Optional animated aura blending three colors with independent intensity, size, and motion controls, plus Flow, Pulse, Waves, Spiral, and a rotating Eye Ring effect
 - Optional aura audio response on every material: bass expands the halo, mids increase brightness, and treble accelerates effects
-- Dedicated orb preview and in-context scene preview
+- Dedicated figure preview, in-context scene preview, and an optional Telekinesis Hand in the Background section beneath the levitating figure
 - Shareable configurations stored in the URL hash
 - Standalone Web and SwiftUI/Metal code export
 - Identical parameter snapshots across Web and SwiftUI exports

@@ -7,9 +7,9 @@ import {
   PortalLayerContainerProvider,
   type PortalLayerContainer,
   usePortalLayerContainer,
-} from "../primitives";
+} from "../primitives/portal-layer-context";
 import { cn } from "../../lib/utils";
-import { Button } from "../primitives";
+import { Button } from "../primitives/button";
 import { XIcon } from "@phosphor-icons/react";
 
 function Sheet({ ...props }: SheetPrimitive.Root.Props) {

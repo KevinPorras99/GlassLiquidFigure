@@ -1367,6 +1367,169 @@ metal::float3 glsInfiniteGazeFluid(metal::float2 p, float t, constant Uniforms& 
   return glsFinishPresetFluid(color * (1.0 + u.audioBands.z * 0.22), p, u);
 }
 
+// Fibonacci populations and exact golden-ratio recursion (phi = (1 + sqrt(5))/2).
+// A sculpted logarithmic shell: radius grows by phi every quarter turn.
+metal::float3 glsFibonacciGeometryFluid(metal::float2 p, float t, constant Uniforms& u) {
+  const float phi = 1.618033989;
+  const float growth = metal::log(phi) / 1.570796327;
+  const metal::float2 q = glsRotate(p, -t * 0.09) / metal::exp((u.zoom - 0.5) * 4.0);
+  const float r = metal::max(metal::length(q), 0.0001);
+  const float angle = metal::atan2(q.y, q.x);
+  // Advect logarithmic radius outward without a looping scale reset.
+  const float logR = metal::log(r) - t * 0.24;
+  const float winding = logR / growth - angle;
+  const float across = (metal::fract(winding / 6.283185307 + 0.5) - 0.5) * 6.283185307;
+  const float aa = metal::clamp(0.0025 / r, 0.008, 0.16);
+  // 34 sculpted ribs per revolution; 21 cavities and 13 filigree beads.
+  const float ribPhase = angle * 34.0 + logR * 8.0;
+  const float rib = 0.5 + 0.5 * metal::sin(ribPhase);
+  const float scallop = across + 0.19 * metal::sin(ribPhase);
+  const float tube = 1.0 - metal::smoothstep(1.08 - aa, 1.08 + aa, metal::abs(scallop));
+  const float rounded = metal::sqrt(metal::max(1.0 - metal::pow(scallop / 1.1, 2.0), 0.0));
+  const float sideLight = metal::clamp(rounded * 0.72 - scallop * 0.35 + 0.16, 0.0, 1.0);
+  const float ribShade = 0.34 + 0.66 * metal::pow(rib, 0.55);
+  const float seam = metal::exp(-metal::pow((rib - 0.015) * 25.0, 2.0));
+  const metal::float3 cream = metal::mix(u.colorC.rgb * 0.3, u.colorD.rgb, sideLight) * ribShade;
+  metal::float3 color = metal::mix(u.colorA.rgb, u.colorB.rgb * 0.48, 0.5 + 0.5 * metal::sin(across));
+  color = metal::mix(color, cream * (1.0 - seam * 0.55), tube);
+  // Blue cup-shaped cavities sit alongside the continuous ivory spiral.
+  const float cells = angle * 3.342253805 + logR * 2.0;
+  const metal::float2 local = metal::float2((metal::fract(cells) - 0.5) * 2.0, (across - 2.03) * 1.85);
+  const float cupR = metal::length(local);
+  const float cupA = metal::atan2(local.y, local.x);
+  const float cup = 1.0 - metal::smoothstep(0.79 - aa, 0.79 + aa, cupR);
+  const float rim = metal::exp(-metal::abs(cupR - 0.81) * (34.0 + u.sharp * 4.0));
+  const float cupLight = metal::clamp(0.45 + local.x * 0.35 - local.y * 0.4, 0.0, 1.0);
+  const float innerSpiral = metal::pow(0.5 + 0.5 * metal::cos(cupA * 2.0 - metal::log(metal::max(cupR, 0.025)) / growth), 12.0);
+  const metal::float3 hollow = metal::mix(u.colorA.rgb * 0.2, u.colorB.rgb, cupR * cupR * cupLight);
+  color = metal::mix(color, hollow + u.colorB.rgb * innerSpiral * 0.25 * cupR, cup);
+  color = color + u.colorC.rgb * rim * (0.35 + cupLight * 0.6);
+  // Recursive engraved curls in the narrow copper band between shells.
+  const float beads = angle * 2.06901426 + logR * 3.0;
+  const metal::float2 bead = metal::float2((metal::fract(beads) - 0.5) * 2.0, (across + 2.04) * 2.5);
+  const float beadR = metal::max(metal::length(bead), 0.02);
+  const float beadA = metal::atan2(bead.y, bead.x);
+  const float scroll = metal::pow(0.5 + 0.5 * metal::cos(beadA - metal::log(beadR) / growth), 18.0);
+  const float beadMask = 1.0 - metal::smoothstep(0.78, 0.92, beadR);
+  const float copper = scroll * beadMask + metal::exp(-metal::abs(beadR - 0.85) * 36.0);
+  color = color + u.colorC.rgb * copper * (0.35 + u.ridgeAmt * 0.65);
+  const float engraving = metal::pow(0.5 + 0.5 * metal::sin(winding * 51.0 + metal::sin(angle * 89.0) * u.warp), 14.0);
+  color = color + u.colorC.rgb * engraving * (1.0 - tube) * (1.0 - cup) * 0.18;
+  const float centerFade = metal::smoothstep(0.003, 0.025, r);
+  color = metal::mix(u.colorD.rgb * 0.55, color, centerFade);
+  return glsFinishPresetFluid(color, p, u);
+}
+
+// True quadratic escape-time fractal, focused on Mandelbrot's seahorse valley.
+metal::float3 glsMandelbrotBloomLayer(metal::float2 p, float t, float growth, constant Uniforms& u) {
+  const float scale = 0.008 * metal::exp(-(u.zoom - 0.35) * 7.0 - growth);
+  const metal::float2 q = glsRotate(p, t * 0.018);
+  const metal::float2 c = metal::float2(-0.743643887, 0.131825904) + q * scale;
+  // Exact interior tests avoid spending iterations in the large black bodies.
+  const float cardioidX = c.x - 0.25;
+  const float cardioidQ = cardioidX * cardioidX + c.y * c.y;
+  const metal::float2 bulb = c + metal::float2(1.0, 0.0);
+  if (cardioidQ * (cardioidQ + cardioidX) <= 0.25 * c.y * c.y || metal::dot(bulb, bulb) <= 0.0625) {
+    return metal::float3(0.0);
+  }
+  metal::float2 z = metal::float2(0.0);
+  float magnitude = 0.0;
+  float escaped = 0.0;
+  float iteration = 0.0;
+  for (int i = 0; i < 224; i = i + 1) {
+    z = metal::float2(z.x * z.x - z.y * z.y, 2.0 * z.x * z.y) + c;
+    magnitude = metal::dot(z, z);
+    iteration = float(i);
+    if (magnitude > 256.0) { escaped = 1.0; break; }
+  }
+  if (escaped < 0.5) { return metal::float3(0.0); }
+  const float smoothIteration = iteration + 1.0 - metal::log2(metal::max(metal::log2(metal::max(magnitude, 1.001)) * 0.5, 0.001));
+  const float band = metal::fract(smoothIteration * 0.055 + t * 0.025);
+  metal::float3 color = u.colorA.rgb;
+  if (band < 0.25) { color = metal::mix(u.colorA.rgb, u.colorB.rgb, metal::smoothstep(0.0, 0.25, band)); }
+  else if (band < 0.5) { color = metal::mix(u.colorB.rgb, u.colorC.rgb, metal::smoothstep(0.25, 0.5, band)); }
+  else if (band < 0.75) { color = metal::mix(u.colorC.rgb, u.colorD.rgb, metal::smoothstep(0.5, 0.75, band)); }
+  else { color = metal::mix(u.colorD.rgb, u.colorA.rgb, metal::smoothstep(0.75, 1.0, band)); }
+  const float filaments = metal::pow(0.5 + 0.5 * metal::cos(smoothIteration * 6.2831853), 3.0 + u.sharp);
+  color = color * (0.72 + 0.28 * filaments) + u.highlightColor.rgb * filaments * u.ridgeAmt * 0.1;
+  return glsFinishPresetFluid(color, p, u);
+}
+
+metal::float3 glsMandelbrotBloomFluid(metal::float2 p, float t, constant Uniforms& u) {
+  const float growth = metal::fract(t * 0.30 / 2.4) * 2.4;
+  const metal::float3 current = glsMandelbrotBloomLayer(p, t, growth, u);
+  if (growth < 1.8) { return current; }
+  const metal::float3 next = glsMandelbrotBloomLayer(p, t, growth - 2.4, u);
+  return metal::mix(current, next, metal::smoothstep(1.8, 2.4, growth));
+}
+
+// Recursive sixfold mirror chambers create a stained-glass floral mandala.
+metal::float3 glsPrismaticKaleidoscopeFluid(metal::float2 p, float t, constant Uniforms& u) {
+  metal::float2 q = glsRotate(p, t * 0.07) * 1.6 / metal::exp((u.zoom - 0.5) * 2.5);
+  metal::float3 color = u.colorA.rgb;
+  float weight = 1.0;
+  for (int depth = 0; depth < 4; depth = depth + 1) {
+    const float radius = metal::length(q);
+    const float angle = metal::atan2(q.y, q.x);
+    const float fold = metal::abs(angle - 1.047197551 * metal::floor(angle / 1.047197551 + 0.5));
+    q = radius * metal::float2(metal::cos(fold), metal::sin(fold));
+    const metal::float2 petal = glsRotate(q - metal::float2(0.62, 0.14), -0.32);
+    const float almond = metal::abs(petal.y) * 2.1 + petal.x * petal.x * 1.4;
+    const float inside = 1.0 - metal::smoothstep(0.24, 0.27, almond);
+    const float ribs = 0.5 + 0.5 * metal::cos(almond * 120.0 - t * 0.35);
+    const float silk = 0.3 + 0.7 * metal::sqrt(metal::max(1.0 - almond / 0.28, 0.0));
+    const metal::float3 violet = metal::mix(u.colorA.rgb, u.colorB.rgb, silk) * (0.55 + ribs * 0.45);
+    const float golden = 0.5 + 0.5 * metal::sin(q.x * 18.0 - q.y * 11.0 + metal::sin(radius * 8.0) * u.warp + t * 0.22);
+    const metal::float3 ground = metal::mix(u.colorA.rgb, u.colorC.rgb, metal::pow(golden, 2.0)) * 0.85;
+    const metal::float3 layer = metal::mix(ground, violet, inside);
+    color = metal::mix(color, layer, weight);
+    const float rim = metal::exp(-metal::abs(almond - 0.255) * (130.0 + u.sharp * 12.0));
+    const float latticeA = metal::sin(q.x * 19.0 + q.y * 32.0 + t * 0.16);
+    const float latticeB = metal::sin(q.x * 19.0 - q.y * 32.0 + t * 0.16);
+    const float lattice = metal::exp(-metal::min(metal::abs(latticeA), metal::abs(latticeB)) * 25.0);
+    color = color + weight * (u.colorC.rgb * rim * 0.8 + u.colorD.rgb * lattice * (1.0 - inside) * 0.38);
+    const float arc = metal::abs(metal::length(q - metal::float2(0.74, 0.48)) - 0.63);
+    const float ribbon = metal::exp(-arc * 100.0) + metal::exp(-metal::abs(arc - 0.034) * 170.0) * 0.3;
+    color = color + u.highlightColor.rgb * ribbon * weight * (0.35 + u.ridgeAmt * 0.7);
+    q = glsRotate((q - metal::float2(0.73, 0.21)) * 2.15, 0.32 + metal::sin(t * 0.12) * 0.12);
+    weight = weight * 0.48;
+  }
+  const float rosette = metal::exp(-metal::length(p) * 42.0);
+  color = color + u.highlightColor.rgb * rosette * 0.7;
+  return glsFinishPresetFluid(color, p, u);
+}
+
+// Thin mirrored interference filaments: cyan inner geometry and white vapor.
+metal::float3 glsSpectralKaleidoscopeFluid(metal::float2 p, float t, constant Uniforms& u) {
+  const metal::float2 q = glsRotate(p, t * 0.055) / metal::exp((u.zoom - 0.5) * 2.5);
+  const float r = metal::length(q);
+  const float theta = metal::atan2(q.y, q.x);
+  const float fold = metal::abs(theta - 1.047197551 * metal::floor(theta / 1.047197551 + 0.5));
+  const metal::float2 mirrored = r * metal::float2(metal::cos(fold), metal::sin(fold));
+  metal::float3 color = u.colorA.rgb * 0.25;
+  for (int layer = 0; layer < 5; layer = layer + 1) {
+    const float depth = float(layer);
+    const float frequency = 7.5 + depth * 4.1;
+    const float drift = t * (0.24 + depth * 0.035);
+    const metal::float2 bend = metal::float2(metal::sin(mirrored.y * 8.0 + drift + depth), metal::sin(mirrored.x * 6.0 - drift + depth * 1.7));
+    const metal::float2 v = mirrored * frequency + bend * (0.55 + u.warp * 0.26);
+    const float field = metal::sin(v.x + metal::sin(v.y * 0.72 + drift)) + metal::cos(v.y - metal::sin(v.x * 0.63 - drift));
+    const float thin = metal::exp(-metal::abs(field) * (75.0 + u.sharp * 14.0));
+    const float haze = metal::exp(-metal::abs(field) * 22.0) * 0.065;
+    const float core = 1.0 - metal::smoothstep(0.32, 0.72, r);
+    const metal::float3 tint = metal::mix(u.colorC.rgb, metal::mix(u.colorB.rgb, u.colorD.rgb, depth * 0.13), core);
+    const float veil = 0.48 + 0.52 * metal::sin(r * 9.0 + depth * 1.3 + drift) * metal::sin(r * 9.0 + depth * 1.3 + drift);
+    color = color + tint * (thin + haze) * veil * (0.8 + u.ridgeAmt * 0.65) / (1.0 + depth * 0.48);
+  }
+  // Fine cyan orbit strands weave through the central mandala.
+  const float orbitRadius = 0.48 + 0.055 * metal::sin(theta * 6.0 + metal::sin(t * 0.25));
+  const float orbit = metal::exp(-metal::abs(r - orbitRadius) * 320.0);
+  const float innerOrbit = metal::exp(-metal::abs(r - orbitRadius * 0.618033989) * 400.0);
+  color = color + u.colorB.rgb * (orbit + innerOrbit * 0.6) * 0.38;
+  color = color * (1.0 - metal::smoothstep(0.76, 1.08, r));
+  return glsFinishPresetFluid(color, p, u);
+}
+
 metal::float3 glsPresetFluid(
     metal::float2 pIn,
     int style,
@@ -1420,6 +1583,10 @@ metal::float3 glsPresetFluid(
     }
     if (style == 25) { return glsGalaxyCoreFluid(p_16, t_13, u); }
     if (style == 26) { return glsMysticMistFluid(p_16, t_13, u); }
+    if (style == 33) { return glsSpectralKaleidoscopeFluid(p_16, t_13, u); }
+    if (style == 32) { return glsPrismaticKaleidoscopeFluid(p_16, t_13, u); }
+    if (style == 31) { return glsMandelbrotBloomFluid(p_16, t_13, u); }
+    if (style == 30) { return glsFibonacciGeometryFluid(p_16, t_13, u); }
     if (style == 29) { return glsInfiniteGazeFluid(p_16, t_13, u); }
     if (style == 28) { return glsVisionaryFractalFluid(p_16, t_13, u); }
     if (style == 27) { return glsCrystalLightFluid(p_16, t_13, u); }

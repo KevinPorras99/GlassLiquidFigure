@@ -19,15 +19,24 @@ const paletteStops = [
   "#6F9EE8",
 ] as const;
 
+// Bounded cache avoids reparsing unchanged colors on every animation frame.
+const rgbCache = new Map<string, [number, number, number, number]>();
+const paletteUniforms = new Float32Array(paletteStops.flatMap(hex => rgb(hex)));
+
 function rgb(hex: string): [number, number, number, number] {
+  const cached = rgbCache.get(hex);
+  if (cached) return cached;
   const value = hex.slice(1);
 
-  return [
+  const result: [number, number, number, number] = [
     Number.parseInt(value.slice(0, 2), 16) / 255,
     Number.parseInt(value.slice(2, 4), 16) / 255,
     Number.parseInt(value.slice(4, 6), 16) / 255,
     1,
   ];
+  if (rgbCache.size >= 256) rgbCache.delete(rgbCache.keys().next().value!);
+  rgbCache.set(hex, result);
+  return result;
 }
 
 export function writeOrbUniforms(
@@ -110,9 +119,9 @@ export function writeOrbUniforms(
     params.specColor,
     params.canvasColor,
     params.glowColor,
-    ...paletteStops,
   ];
   colors.forEach((hex, index) => target.set(rgb(hex), orbColorOffset + index * 4));
+  target.set(paletteUniforms, orbColorOffset + colors.length * 4);
 }
 
 export function createOrbUniformSnapshot(params: OrbParams): number[] {

@@ -16,7 +16,11 @@ export type StyleName =
   | "mysticMist"
   | "crystalLight"
   | "visionaryFractal"
-  | "infiniteGaze";
+  | "infiniteGaze"
+  | "fibonacciGeometry"
+  | "mandelbrotBloom"
+  | "prismaticKaleidoscope"
+  | "spectralKaleidoscope";
 
 export const shapeNames = ["orb", "cube", "rhomboid", "trapezoid", "triangle", "pentagon", "hexagon", "octagon", "flowerOfLife", "seedOfLife", "vesicaPiscis", "metatron", "star", "star7"] as const;
 export type ShapeName = (typeof shapeNames)[number];
@@ -522,6 +526,42 @@ export const stylePresets: Record<StyleName, StylePreset> = {
     canvasColor: "#020409", glowColor: "#63B6B3",
     shellMid: "#DCF9E8", shellEdge: "#216773",
   },
+  spectralKaleidoscope: {
+    ...basePreset,
+    speed: 0.6, zoom: 0.5, warp: 2.3, ridgeAmt: 0.75, sharp: 3.0,
+    shade: 0.01, sheen: 0.02, gloss: 0.03, exposure: 1.12,
+    glassOpacity: 0.05, shellMidAlpha: 0.02, shellEdgeAlpha: 0.03,
+    colorA: "#010205", colorB: "#04CDEB", colorC: "#F4FCFF", colorD: "#1269FF",
+    highlightColor: "#FFFFFF", canvasColor: "#000000", glowColor: "#04CDEB",
+    shellInner: "#FFFFFF", shellMid: "#04CDEB", shellEdge: "#1269FF",
+  },
+  prismaticKaleidoscope: {
+    ...basePreset,
+    speed: 0.45, zoom: 0.5, warp: 2.2, ridgeAmt: 0.7, sharp: 2.7,
+    shade: 0.04, sheen: 0.08, gloss: 0.12, exposure: 1.05,
+    glassOpacity: 0.1, shellMidAlpha: 0.06, shellEdgeAlpha: 0.1,
+    colorA: "#18082B", colorB: "#8335AA", colorC: "#F6AD32", colorD: "#31BA85",
+    highlightColor: "#FFF4DE", canvasColor: "#030107", glowColor: "#B67AF1",
+    shellInner: "#FFF4DE", shellMid: "#8335AA", shellEdge: "#F6AD32",
+  },
+  mandelbrotBloom: {
+    ...basePreset,
+    speed: 0.4, zoom: 0.35, warp: 0.6, ridgeAmt: 0.65, sharp: 2.5,
+    shade: 0.02, sheen: 0.05, gloss: 0.08, exposure: 1.05,
+    glassOpacity: 0.08, shellMidAlpha: 0.04, shellEdgeAlpha: 0.08,
+    colorA: "#070B36", colorB: "#238EC4", colorC: "#FFF1AE", colorD: "#EE900F",
+    highlightColor: "#F7FCFF", canvasColor: "#000000", glowColor: "#238EC4",
+    shellInner: "#F7FCFF", shellMid: "#238EC4", shellEdge: "#EE900F",
+  },
+  fibonacciGeometry: {
+    ...basePreset,
+    speed: 0.55, zoom: 0.5, warp: 1.6, ridgeAmt: 0.75, sharp: 2.6,
+    shade: 0.06, sheen: 0.1, gloss: 0.18, exposure: 1.1,
+    glassOpacity: 0.14, shellMidAlpha: 0.08, shellEdgeAlpha: 0.12,
+    colorA: "#050C20", colorB: "#167D9B", colorC: "#C56A32", colorD: "#FFE0AA",
+    highlightColor: "#FFF7DD", canvasColor: "#020409", glowColor: "#DEAA50",
+    shellInner: "#FFF0BD", shellMid: "#227A87", shellEdge: "#DEAA50",
+  },
   infiniteGaze: {
     ...basePreset,
     speed: 0.7, zoom: 0.5, warp: 2.0, ridgeAmt: 0.7, sharp: 2.4,
@@ -551,7 +591,7 @@ export const stylePresets: Record<StyleName, StylePreset> = {
 };
 
 export const styleNames: readonly StyleName[] = [
-  "infiniteGaze", "visionaryFractal", "galaxyCore", "mysticMist", "crystalLight",
+  "spectralKaleidoscope", "prismaticKaleidoscope", "mandelbrotBloom", "fibonacciGeometry", "infiniteGaze", "visionaryFractal", "galaxyCore", "mysticMist", "crystalLight",
   "siri",
   "voiceWave",
   "particleRibbon",
@@ -568,6 +608,10 @@ export const styleNames: readonly StyleName[] = [
 ];
 
 export const styleFlowIndexes: Record<StyleName, number> = {
+  spectralKaleidoscope: 33,
+  prismaticKaleidoscope: 32,
+  mandelbrotBloom: 31,
+  fibonacciGeometry: 30,
   infiniteGaze: 29,
   visionaryFractal: 28,
   galaxyCore: 25, mysticMist: 26, crystalLight: 27,

@@ -41,6 +41,10 @@ export const styleLabels: Record<Locale, Record<StyleName, string>> = {
     galaxyCore: "Galaxy Core",
     mysticMist: "Mystic Mist",
     crystalLight: "Crystal Light",
+    spectralKaleidoscope: "Spectral Kaleidoscope",
+    prismaticKaleidoscope: "Prismatic Kaleidoscope",
+    mandelbrotBloom: "Mandelbrot Bloom",
+    fibonacciGeometry: "Fibonacci Geometry",
     infiniteGaze: "Infinite Gaze",
     visionaryFractal: "Visionary Fractal",
   },
@@ -114,7 +118,7 @@ export const colorLabels: Record<Locale, Record<ColorKey, string>> = {
 
 export const uiCopy = {
   en: {
-    documentTitle: "Liquid Orb Editor",
+    documentTitle: "Liquid Figure Editor",
     presets: "Presets",
     animatedPresets: "Animated presets",
     orbControls: "Figure Controls",

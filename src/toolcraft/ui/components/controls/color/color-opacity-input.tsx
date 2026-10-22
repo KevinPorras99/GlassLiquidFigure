@@ -7,7 +7,7 @@ import {
   InputGroupAddon,
   InputGroupInput,
   InputGroupText,
-} from "../../primitives";
+} from "../../primitives/input-group";
 import type { ControlChangeMeta } from "../control-types";
 
 export function parseOpacityValue(opacity: number | undefined): number {

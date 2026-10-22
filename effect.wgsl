@@ -1041,6 +1041,171 @@ fn glsInfiniteGazeFluid(p: vec2<f32>, t: f32) -> vec3<f32> {
   return glsFinishPresetFluid(color * (1.0 + u.audioBands.z * 0.22), p);
 }
 
+// Fibonacci populations and exact golden-ratio recursion (phi = (1 + sqrt(5))/2).
+// A sculpted logarithmic shell: radius grows by phi every quarter turn.
+fn glsFibonacciGeometryFluid(p: vec2<f32>, t: f32) -> vec3<f32> {
+  let phi: f32 = 1.618033989;
+  let growth: f32 = log(phi) / 1.570796327;
+  let q: vec2<f32> = glsRotate(p, -t * 0.09) / exp((u.zoom - 0.5) * 4.0);
+  let r: f32 = max(length(q), 0.0001);
+  let angle: f32 = atan2(q.y, q.x);
+  // Advect logarithmic radius outward without a looping scale reset.
+  let logR: f32 = log(r) - t * 0.24;
+  let winding: f32 = logR / growth - angle;
+  let across: f32 = (fract(winding / 6.283185307 + 0.5) - 0.5) * 6.283185307;
+  let aa: f32 = clamp(0.0025 / r, 0.008, 0.16);
+  // 34 sculpted ribs per revolution; 21 cavities and 13 filigree beads.
+  let ribPhase: f32 = angle * 34.0 + logR * 8.0;
+  let rib: f32 = 0.5 + 0.5 * sin(ribPhase);
+  let scallop: f32 = across + 0.19 * sin(ribPhase);
+  let tube: f32 = 1.0 - smoothstep(1.08 - aa, 1.08 + aa, abs(scallop));
+  let rounded: f32 = sqrt(max(1.0 - pow(scallop / 1.1, 2.0), 0.0));
+  let sideLight: f32 = clamp(rounded * 0.72 - scallop * 0.35 + 0.16, 0.0, 1.0);
+  let ribShade: f32 = 0.34 + 0.66 * pow(rib, 0.55);
+  let seam: f32 = exp(-pow((rib - 0.015) * 25.0, 2.0));
+  let cream: vec3<f32> = mix(u.colorC.rgb * 0.3, u.colorD.rgb, sideLight) * ribShade;
+  var color: vec3<f32> = mix(u.colorA.rgb, u.colorB.rgb * 0.48, 0.5 + 0.5 * sin(across));
+  color = mix(color, cream * (1.0 - seam * 0.55), tube);
+  // Blue cup-shaped cavities sit alongside the continuous ivory spiral.
+  let cells: f32 = angle * 3.342253805 + logR * 2.0;
+  let local: vec2<f32> = vec2<f32>((fract(cells) - 0.5) * 2.0, (across - 2.03) * 1.85);
+  let cupR: f32 = length(local);
+  let cupA: f32 = atan2(local.y, local.x);
+  let cup: f32 = 1.0 - smoothstep(0.79 - aa, 0.79 + aa, cupR);
+  let rim: f32 = exp(-abs(cupR - 0.81) * (34.0 + u.sharp * 4.0));
+  let cupLight: f32 = clamp(0.45 + local.x * 0.35 - local.y * 0.4, 0.0, 1.0);
+  let innerSpiral: f32 = pow(0.5 + 0.5 * cos(cupA * 2.0 - log(max(cupR, 0.025)) / growth), 12.0);
+  let hollow: vec3<f32> = mix(u.colorA.rgb * 0.2, u.colorB.rgb, cupR * cupR * cupLight);
+  color = mix(color, hollow + u.colorB.rgb * innerSpiral * 0.25 * cupR, cup);
+  color = color + u.colorC.rgb * rim * (0.35 + cupLight * 0.6);
+  // Recursive engraved curls in the narrow copper band between shells.
+  let beads: f32 = angle * 2.06901426 + logR * 3.0;
+  let bead: vec2<f32> = vec2<f32>((fract(beads) - 0.5) * 2.0, (across + 2.04) * 2.5);
+  let beadR: f32 = max(length(bead), 0.02);
+  let beadA: f32 = atan2(bead.y, bead.x);
+  let scroll: f32 = pow(0.5 + 0.5 * cos(beadA - log(beadR) / growth), 18.0);
+  let beadMask: f32 = 1.0 - smoothstep(0.78, 0.92, beadR);
+  let copper: f32 = scroll * beadMask + exp(-abs(beadR - 0.85) * 36.0);
+  color = color + u.colorC.rgb * copper * (0.35 + u.ridgeAmt * 0.65);
+  let engraving: f32 = pow(0.5 + 0.5 * sin(winding * 51.0 + sin(angle * 89.0) * u.warp), 14.0);
+  color = color + u.colorC.rgb * engraving * (1.0 - tube) * (1.0 - cup) * 0.18;
+  let centerFade: f32 = smoothstep(0.003, 0.025, r);
+  color = mix(u.colorD.rgb * 0.55, color, centerFade);
+  return glsFinishPresetFluid(color, p);
+}
+
+// True quadratic escape-time fractal, focused on Mandelbrot's seahorse valley.
+fn glsMandelbrotBloomLayer(p: vec2<f32>, t: f32, growth: f32) -> vec3<f32> {
+  let scale: f32 = 0.008 * exp(-(u.zoom - 0.35) * 7.0 - growth);
+  let q: vec2<f32> = glsRotate(p, t * 0.018);
+  let c: vec2<f32> = vec2<f32>(-0.743643887, 0.131825904) + q * scale;
+  // Exact interior tests avoid spending iterations in the large black bodies.
+  let cardioidX: f32 = c.x - 0.25;
+  let cardioidQ: f32 = cardioidX * cardioidX + c.y * c.y;
+  let bulb: vec2<f32> = c + vec2<f32>(1.0, 0.0);
+  if (cardioidQ * (cardioidQ + cardioidX) <= 0.25 * c.y * c.y || dot(bulb, bulb) <= 0.0625) {
+    return vec3<f32>(0.0);
+  }
+  var z: vec2<f32> = vec2<f32>(0.0);
+  var magnitude: f32 = 0.0;
+  var escaped: f32 = 0.0;
+  var iteration: f32 = 0.0;
+  for (var i: i32 = 0; i < 224; i = i + 1) {
+    z = vec2<f32>(z.x * z.x - z.y * z.y, 2.0 * z.x * z.y) + c;
+    magnitude = dot(z, z);
+    iteration = f32(i);
+    if (magnitude > 256.0) { escaped = 1.0; break; }
+  }
+  if (escaped < 0.5) { return vec3<f32>(0.0); }
+  let smoothIteration: f32 = iteration + 1.0 - log2(max(log2(max(magnitude, 1.001)) * 0.5, 0.001));
+  let band: f32 = fract(smoothIteration * 0.055 + t * 0.025);
+  var color: vec3<f32> = u.colorA.rgb;
+  if (band < 0.25) { color = mix(u.colorA.rgb, u.colorB.rgb, smoothstep(0.0, 0.25, band)); }
+  else if (band < 0.5) { color = mix(u.colorB.rgb, u.colorC.rgb, smoothstep(0.25, 0.5, band)); }
+  else if (band < 0.75) { color = mix(u.colorC.rgb, u.colorD.rgb, smoothstep(0.5, 0.75, band)); }
+  else { color = mix(u.colorD.rgb, u.colorA.rgb, smoothstep(0.75, 1.0, band)); }
+  let filaments: f32 = pow(0.5 + 0.5 * cos(smoothIteration * 6.2831853), 3.0 + u.sharp);
+  color = color * (0.72 + 0.28 * filaments) + u.highlightColor.rgb * filaments * u.ridgeAmt * 0.1;
+  return glsFinishPresetFluid(color, p);
+}
+
+// Exponential magnification makes the fractal's own branches expand outward.
+// Crossfade only at the end of a cycle to avoid a hard jump or precision loss.
+fn glsMandelbrotBloomFluid(p: vec2<f32>, t: f32) -> vec3<f32> {
+  let growth: f32 = fract(t * 0.30 / 2.4) * 2.4;
+  let current: vec3<f32> = glsMandelbrotBloomLayer(p, t, growth);
+  if (growth < 1.8) { return current; }
+  let next: vec3<f32> = glsMandelbrotBloomLayer(p, t, growth - 2.4);
+  return mix(current, next, smoothstep(1.8, 2.4, growth));
+}
+
+// Recursive sixfold mirror chambers create a stained-glass floral mandala.
+fn glsPrismaticKaleidoscopeFluid(p: vec2<f32>, t: f32) -> vec3<f32> {
+  var q: vec2<f32> = glsRotate(p, t * 0.07) * 1.6 / exp((u.zoom - 0.5) * 2.5);
+  var color: vec3<f32> = u.colorA.rgb;
+  var weight: f32 = 1.0;
+  for (var depth: i32 = 0; depth < 4; depth = depth + 1) {
+    let radius: f32 = length(q);
+    let angle: f32 = atan2(q.y, q.x);
+    let fold: f32 = abs(angle - 1.047197551 * floor(angle / 1.047197551 + 0.5));
+    q = radius * vec2<f32>(cos(fold), sin(fold));
+    let petal: vec2<f32> = glsRotate(q - vec2<f32>(0.62, 0.14), -0.32);
+    let almond: f32 = abs(petal.y) * 2.1 + petal.x * petal.x * 1.4;
+    let inside: f32 = 1.0 - smoothstep(0.24, 0.27, almond);
+    let ribs: f32 = 0.5 + 0.5 * cos(almond * 120.0 - t * 0.35);
+    let silk: f32 = 0.3 + 0.7 * sqrt(max(1.0 - almond / 0.28, 0.0));
+    let violet: vec3<f32> = mix(u.colorA.rgb, u.colorB.rgb, silk) * (0.55 + ribs * 0.45);
+    let golden: f32 = 0.5 + 0.5 * sin(q.x * 18.0 - q.y * 11.0 + sin(radius * 8.0) * u.warp + t * 0.22);
+    let ground: vec3<f32> = mix(u.colorA.rgb, u.colorC.rgb, pow(golden, 2.0)) * 0.85;
+    let layer: vec3<f32> = mix(ground, violet, inside);
+    color = mix(color, layer, weight);
+    let rim: f32 = exp(-abs(almond - 0.255) * (130.0 + u.sharp * 12.0));
+    let latticeA: f32 = sin(q.x * 19.0 + q.y * 32.0 + t * 0.16);
+    let latticeB: f32 = sin(q.x * 19.0 - q.y * 32.0 + t * 0.16);
+    let lattice: f32 = exp(-min(abs(latticeA), abs(latticeB)) * 25.0);
+    color = color + weight * (u.colorC.rgb * rim * 0.8 + u.colorD.rgb * lattice * (1.0 - inside) * 0.38);
+    let arc: f32 = abs(length(q - vec2<f32>(0.74, 0.48)) - 0.63);
+    let ribbon: f32 = exp(-arc * 100.0) + exp(-abs(arc - 0.034) * 170.0) * 0.3;
+    color = color + u.highlightColor.rgb * ribbon * weight * (0.35 + u.ridgeAmt * 0.7);
+    q = glsRotate((q - vec2<f32>(0.73, 0.21)) * 2.15, 0.32 + sin(t * 0.12) * 0.12);
+    weight = weight * 0.48;
+  }
+  let rosette: f32 = exp(-length(p) * 42.0);
+  color = color + u.highlightColor.rgb * rosette * 0.7;
+  return glsFinishPresetFluid(color, p);
+}
+
+// Thin mirrored interference filaments: cyan inner geometry and white vapor.
+fn glsSpectralKaleidoscopeFluid(p: vec2<f32>, t: f32) -> vec3<f32> {
+  let q: vec2<f32> = glsRotate(p, t * 0.055) / exp((u.zoom - 0.5) * 2.5);
+  let r: f32 = length(q);
+  let theta: f32 = atan2(q.y, q.x);
+  let fold: f32 = abs(theta - 1.047197551 * floor(theta / 1.047197551 + 0.5));
+  let mirrored: vec2<f32> = r * vec2<f32>(cos(fold), sin(fold));
+  var color: vec3<f32> = u.colorA.rgb * 0.25;
+  for (var layer: i32 = 0; layer < 5; layer = layer + 1) {
+    let depth: f32 = f32(layer);
+    let frequency: f32 = 7.5 + depth * 4.1;
+    let drift: f32 = t * (0.24 + depth * 0.035);
+    let bend: vec2<f32> = vec2<f32>(sin(mirrored.y * 8.0 + drift + depth), sin(mirrored.x * 6.0 - drift + depth * 1.7));
+    let v: vec2<f32> = mirrored * frequency + bend * (0.55 + u.warp * 0.26);
+    let field: f32 = sin(v.x + sin(v.y * 0.72 + drift)) + cos(v.y - sin(v.x * 0.63 - drift));
+    let thin: f32 = exp(-abs(field) * (75.0 + u.sharp * 14.0));
+    let haze: f32 = exp(-abs(field) * 22.0) * 0.065;
+    let core: f32 = 1.0 - smoothstep(0.32, 0.72, r);
+    let tint: vec3<f32> = mix(u.colorC.rgb, mix(u.colorB.rgb, u.colorD.rgb, depth * 0.13), core);
+    let veil: f32 = 0.48 + 0.52 * sin(r * 9.0 + depth * 1.3 + drift) * sin(r * 9.0 + depth * 1.3 + drift);
+    color = color + tint * (thin + haze) * veil * (0.8 + u.ridgeAmt * 0.65) / (1.0 + depth * 0.48);
+  }
+  // Fine cyan orbit strands weave through the central mandala.
+  let orbitRadius: f32 = 0.48 + 0.055 * sin(theta * 6.0 + sin(t * 0.25));
+  let orbit: f32 = exp(-abs(r - orbitRadius) * 320.0);
+  let innerOrbit: f32 = exp(-abs(r - orbitRadius * 0.618033989) * 400.0);
+  color = color + u.colorB.rgb * (orbit + innerOrbit * 0.6) * 0.38;
+  color = color * (1.0 - smoothstep(0.76, 1.08, r));
+  return glsFinishPresetFluid(color, p);
+}
+
 fn glsPresetFluid(pIn: vec2<f32>, style: i32, t: f32) -> vec3<f32> {
   let p = pIn - vec2<f32>(0.0, glsAudioWave(pIn.x, t));
   if (style == 9) { return glsSiriFluid(p, t); }
@@ -1057,6 +1222,10 @@ fn glsPresetFluid(pIn: vec2<f32>, style: i32, t: f32) -> vec3<f32> {
   if (style == 23) { return glsRefractiveBlobFluid(p, t); }
   if (style == 25) { return glsGalaxyCoreFluid(p, t); }
   if (style == 26) { return glsMysticMistFluid(p, t); }
+  if (style == 33) { return glsSpectralKaleidoscopeFluid(p, t); }
+  if (style == 32) { return glsPrismaticKaleidoscopeFluid(p, t); }
+  if (style == 31) { return glsMandelbrotBloomFluid(p, t); }
+  if (style == 30) { return glsFibonacciGeometryFluid(p, t); }
   if (style == 29) { return glsInfiniteGazeFluid(p, t); }
   if (style == 28) { return glsVisionaryFractalFluid(p, t); }
   if (style == 27) { return glsCrystalLightFluid(p, t); }

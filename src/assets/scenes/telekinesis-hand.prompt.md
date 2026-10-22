@@ -1,0 +1,5 @@
+# Telekinesis hand
+
+Generated with the built-in image generation tool. Transparent PNG used as a scene layer; the interactive figure is rendered separately.
+
+Use case: stylized-concept. Asset: transparent PNG compositing layer for a dark interactive 3D figure editor. Create one beautifully sculpted realistic 3D human hand and short forearm, palm facing upward, in a graceful telekinesis pose. Exactly five anatomically correct fingers, gently curved upward; thumb on viewer left, fingers extending toward upper right in three-quarter perspective. The open palm is centered horizontally at 48% image height; wrist enters from bottom center. Matte charcoal porcelain material with subtle silver and violet rim light from above and soft cyan reflected light on fingertips. Entire hand visible with generous transparent padding around fingertips, square composition. Isolated transparent background, no orb, no sphere, no magic particles, no text, no pedestal, no extra hands. The empty space directly above palm will hold a separately rendered floating figure. Premium cinematic 3D render.

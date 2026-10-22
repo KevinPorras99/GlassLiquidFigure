@@ -162,20 +162,40 @@ input {
 }
 
 .orb-status {
-  position: absolute;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  pointer-events: none;
+  position: absolute; inset: 0; display: flex; flex-direction: column;
+  justify-content: center; align-items: center; gap: 22px; padding: 16px;
+  pointer-events: none; text-align: center;
 }
-
-.orb-spinner {
-  width: 24px;
-  height: 24px;
-  border: 2px solid color-mix(in oklab, var(--accent) 24%, transparent);
-  border-top-color: var(--accent);
-  border-radius: 50%;
-  animation: orb-spin 800ms linear infinite;
+.loading-lyrics { display: grid; width: 100%; max-width: 420px; }
+.loading-lyrics-slide {
+  grid-area: 1 / 1; align-self: center; opacity: 0;
+  animation: loading-lyric-reveal 18s cubic-bezier(0.45, 0, 0.55, 1) infinite both;
+}
+.loading-lyrics-quote {
+  margin: 0; color: #f2edf8; font-size: clamp(15px, 2.5cqw, 26px);
+  line-height: 1.4; font-weight: 400; letter-spacing: 0.045em;
+}
+.loading-lyrics-song {
+  margin: 12px 0 0; color: #9b91ab; font-size: 10px;
+  letter-spacing: 0.15em; text-transform: uppercase;
+}
+.loading-dots { display: inline-flex; gap: 4px; color: #b9adc9; font-size: 24px; line-height: 1; }
+.loading-dots > span { animation: loading-dot-pulse 1.2s ease-in-out infinite; }
+.loading-dots > span:nth-child(2) { animation-delay: 0.16s; }
+.loading-dots > span:nth-child(3) { animation-delay: 0.32s; }
+@keyframes loading-dot-pulse {
+  0%, 80%, 100% { opacity: 0.25; transform: translateY(0); }
+  40% { opacity: 1; transform: translateY(-3px); }
+}
+@keyframes loading-lyric-reveal {
+  0% { opacity: 0; transform: translateY(7px); }
+  2.5%, 14% { opacity: 1; transform: translateY(0); }
+  16.6667%, 100% { opacity: 0; transform: translateY(-5px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .loading-dots > span { animation: none; opacity: 0.8; }
+  .loading-lyrics-slide { animation: none; display: none; }
+  .loading-lyrics-slide:first-child { display: block; opacity: 1; }
 }
 
 .orb-error {
@@ -199,7 +219,7 @@ input {
   top: 16px;
   left: 50%;
   z-index: 3;
-  width: 224px;
+  width: min(340px, calc(100% - 24px));
   padding: 8px;
   transform: translateX(-50%);
   border: 1px solid color-mix(in oklab, var(--border) 24%, transparent);
@@ -519,11 +539,6 @@ input {
   white-space: pre;
 }
 
-@keyframes orb-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
 
 @keyframes scene-text-sweep {
   0%,
@@ -691,10 +706,6 @@ input {
     transition-duration: 0.01ms !important;
   }
 
-  .orb-spinner {
-    animation-duration: 1.6s;
-  }
-
   .scene-copy-text {
     background-position: 50% 0;
     animation: none;
@@ -735,3 +746,44 @@ input {
 .orb-canvas { cursor: grab; touch-action: none; }
 .orb-canvas[data-dragging="true"] { cursor: grabbing; }
 .orb-canvas:focus-visible { outline: 2px solid #a898ff; outline-offset: -4px; border-radius: 12px; }
+
+/* A square scene keeps the palm and floating figure aligned at all screen sizes. */
+.orb-stage[data-preview-mode="telekinesis"] .stage-mode-control { width: min(340px, calc(100% - 24px)); }
+.orb-stage[data-preview-mode="telekinesis"] .preview-surface {
+  inset: 50% auto auto 50%;
+  width: min(94cqw, 76dvh, 720px);
+  height: auto;
+  aspect-ratio: 1;
+  transform: translate(-50%, -48%) scale(var(--preview-scale, 1));
+  transform-origin: center;
+  isolation: isolate;
+}
+.telekinesis-backdrop { position: absolute; inset: 0; pointer-events: none; }
+.telekinesis-hand {
+  position: absolute; width: 88%; height: auto; left: 6%; top: 22%; object-fit: contain;
+  transform-origin: 48% 94%;
+  animation: telekinesis-hand-breathe 5s cubic-bezier(0.45, 0, 0.55, 1) infinite,
+    telekinesis-hand-sway 13s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+}
+.orb-stage[data-preview-mode="telekinesis"] .orb-visual {
+  inset: 0 auto auto 17.5%; width: 65%; height: 65%;
+  transform: translateY(-2%);
+  animation: telekinesis-hover 5s ease-in-out infinite;
+}
+/* Independent transform properties combine breathing with a slower wrist sway. */
+@keyframes telekinesis-hand-breathe {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-1.2%); }
+}
+@keyframes telekinesis-hand-sway {
+  0%, 100% { rotate: -1deg; }
+  50% { rotate: 1.2deg; }
+}
+@keyframes telekinesis-hover {
+  0%, 100% { transform: translateY(-2%); }
+  50% { transform: translateY(-5%); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .orb-stage[data-preview-mode="telekinesis"] .orb-visual,
+  .telekinesis-hand { animation: none; }
+}

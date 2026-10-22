@@ -1,4 +1,5 @@
 import * as React from "react";
+import { LoadingLyrics } from "./LoadingLyrics";
 import { Starfield, starfieldStyles } from "./starfield";
 import { CodeIcon, CopySimpleIcon } from "@phosphor-icons/react";
 
@@ -89,6 +90,11 @@ import galaxyCorePreviewUrl from "./assets/presets/galaxyCore.svg";
 import mysticMistPreviewUrl from "./assets/presets/mysticMist.svg";
 import crystalLightPreviewUrl from "./assets/presets/crystalLight.svg";
 
+import telekinesisHandUrl from "./assets/scenes/telekinesis-hand.png";
+import spectralKaleidoscopePreviewUrl from "./assets/presets/spectralKaleidoscope.png";
+import prismaticKaleidoscopePreviewUrl from "./assets/presets/prismaticKaleidoscope.png";
+import mandelbrotBloomPreviewUrl from "./assets/presets/mandelbrotBloom.png";
+import fibonacciGeometryPreviewUrl from "./assets/presets/fibonacciGeometry.svg";
 import infiniteGazePreviewUrl from "./assets/presets/infiniteGaze.svg";
 import visionaryFractalPreviewUrl from "./assets/presets/visionaryFractal.svg";
 
@@ -109,6 +115,10 @@ const stylePreviewUrls: Record<StyleName, string> = {
   galaxyCore: galaxyCorePreviewUrl,
   mysticMist: mysticMistPreviewUrl,
   crystalLight: crystalLightPreviewUrl,
+  spectralKaleidoscope: spectralKaleidoscopePreviewUrl,
+  prismaticKaleidoscope: prismaticKaleidoscopePreviewUrl,
+  mandelbrotBloom: mandelbrotBloomPreviewUrl,
+  fibonacciGeometry: fibonacciGeometryPreviewUrl,
   infiniteGaze: infiniteGazePreviewUrl,
   visionaryFractal: visionaryFractalPreviewUrl,
 };
@@ -142,7 +152,7 @@ type NumericSpec = {
 };
 
 const ridgeStyles: readonly StyleName[] = [
-  "infiniteGaze", "visionaryFractal", "galaxyCore", "mysticMist", "crystalLight",
+  "spectralKaleidoscope", "prismaticKaleidoscope", "mandelbrotBloom", "fibonacciGeometry", "infiniteGaze", "visionaryFractal", "galaxyCore", "mysticMist", "crystalLight",
   "siri",
   "voiceWave",
   "spectrum",
@@ -154,7 +164,7 @@ const ridgeStyles: readonly StyleName[] = [
   "refractiveBlob",
 ];
 const sharpStyles: readonly StyleName[] = [
-  "infiniteGaze", "visionaryFractal",
+  "spectralKaleidoscope", "prismaticKaleidoscope", "mandelbrotBloom", "fibonacciGeometry", "infiniteGaze", "visionaryFractal",
   "crystalLight",
   "frost",
   "plasma",
@@ -371,9 +381,13 @@ function limitSceneText(value: string): string {
 }
 
 function readPreviewModeFromHash(): PreviewMode {
-  return new URLSearchParams(window.location.hash.slice(1)).get("preview") === "scene"
-    ? "scene"
-    : "orb";
+  const mode = new URLSearchParams(window.location.hash.slice(1)).get("preview");
+  return mode === "scene" ? "scene" : "orb";
+}
+
+function readHandBackgroundFromHash(): boolean {
+  const search = new URLSearchParams(window.location.hash.slice(1));
+  return search.get("background") === "hand" || search.get("preview") === "telekinesis";
 }
 
 function readSceneTextFromHash(): string {
@@ -486,6 +500,7 @@ function writeHash(
   editorState: OrbEditorState,
   previewMode: PreviewMode,
   sceneText: string,
+  handBackground: boolean,
 ): void {
   const { configuration, activeState } = editorState;
   const params = resolveOrbStateParams(configuration, "thinking");
@@ -505,6 +520,7 @@ function writeHash(
   search.set("activation", String(configuration.activationDuration));
   search.set("transition", String(configuration.transitionDuration));
   search.set("preview", previewMode);
+  search.set("background", handBackground ? "hand" : "none");
   search.set("text", sceneText);
   for (const spec of numericSpecs) {
     search.set(spec.key, String(params[spec.key]));
@@ -570,6 +586,7 @@ export function App(): React.JSX.Element {
   const [mobilePanel, setMobilePanel] = React.useState<"controls" | "presets">("controls");
   const [previewScale, setPreviewScale] = React.useState(1);
   const [previewMode, setPreviewMode] = React.useState<PreviewMode>(readPreviewModeFromHash);
+  const [handBackground, setHandBackground] = React.useState(readHandBackgroundFromHash);
   const [sceneText, setSceneText] = React.useState(readSceneTextFromHash);
   const [codeOpen, setCodeOpen] = React.useState(false);
   const [codePlatform, setCodePlatform] = React.useState<"web" | "swift">("web");
@@ -580,9 +597,9 @@ export function App(): React.JSX.Element {
   const canvasRef = React.useRef<HTMLCanvasElement | null>(null);
   const stageRef = React.useRef<HTMLElement | null>(null);
   const copyBufferRef = React.useRef<HTMLTextAreaElement | null>(null);
-  const params = resolveOrbStateParams(
-    editorState.configuration,
-    editorState.activeState,
+  const params = React.useMemo(
+    () => resolveOrbStateParams(editorState.configuration, editorState.activeState),
+    [editorState.configuration, editorState.activeState],
   );
   const presetStateParams = React.useMemo(
     () => resolveOrbStateParams(
@@ -654,16 +671,17 @@ export function App(): React.JSX.Element {
 
   React.useEffect(() => {
     const timeout = window.setTimeout(() => {
-      writeHash(editorState, previewMode, sceneText);
+      writeHash(editorState, previewMode, sceneText, handBackground);
     }, hashSyncDelayMs);
 
     return () => window.clearTimeout(timeout);
-  }, [editorState, previewMode, sceneText]);
+  }, [editorState, previewMode, sceneText, handBackground]);
 
   React.useEffect(() => {
     const syncFromHash = () => {
       setEditorState(readEditorStateFromHash());
       setPreviewMode(readPreviewModeFromHash());
+      setHandBackground(readHandBackgroundFromHash());
       setSceneText(readSceneTextFromHash());
       setPreviewScale(1);
     };
@@ -852,7 +870,7 @@ export function App(): React.JSX.Element {
     }
   }, [codePlatform, swiftCode, webCode]);
 
-  function renderSlider(key: NumericKey): React.JSX.Element | null {
+  function renderSlider(key: NumericKey, label = numericLabels[locale][key]): React.JSX.Element | null {
     const spec = numericSpecByKey.get(key);
     if (!spec) throw new Error(`Missing slider configuration: ${key}`);
     if (spec.enabledStyles && !spec.enabledStyles.includes(params.style)) return null;
@@ -860,11 +878,11 @@ export function App(): React.JSX.Element {
     return (
       <Slider
         baseValue={presetStateParams[key]}
-        editValueLabel={copy.editValue(numericLabels[locale][key])}
+        editValueLabel={copy.editValue(label)}
         key={key}
         max={spec.max}
         min={spec.min}
-        name={numericLabels[locale][key]}
+        name={label}
         onValueChange={(value) => setParam(key, value)}
         showFill
         step={spec.step}
@@ -970,7 +988,7 @@ export function App(): React.JSX.Element {
         <section
           className="orb-stage"
           aria-label={previewMode === "scene" ? copy.scenePreview : copy.orbPreview}
-          data-preview-mode={previewMode}
+          data-preview-mode={handBackground && previewMode === "orb" ? "telekinesis" : previewMode}
           data-aura-enabled={params.auraEnabled ? "true" : "false"}
           ref={stageRef}
           style={{ "--preview-scale": previewScale } as React.CSSProperties}
@@ -987,6 +1005,11 @@ export function App(): React.JSX.Element {
             />
           </div>
           <div className="preview-surface">
+            {handBackground && previewMode === "orb" && (
+              <div className="telekinesis-backdrop" aria-hidden="true">
+                <img className="telekinesis-hand" src={telekinesisHandUrl} alt="" draggable={false} />
+              </div>
+            )}
             <div className="orb-visual">
               {renderState === "error" ? (
                 <img className="orb-poster" src={posterUrl} alt={copy.staticOrbPreview} />
@@ -1000,10 +1023,7 @@ export function App(): React.JSX.Element {
                 ref={canvasRef}
               />
               {renderState === "loading" ? (
-                <div className="orb-status" role="status" aria-live="polite">
-                  <span className="orb-spinner" aria-hidden="true" />
-                  <span className="sr-only">{copy.loadingOrb}</span>
-                </div>
+                <LoadingLyrics label={copy.loadingOrb} />
               ) : null}
               {renderState === "error" ? (
                 <p
@@ -1078,6 +1098,13 @@ export function App(): React.JSX.Element {
               <Switch checked={params.asciiEnabled} name="Enable ASCII"
                 onCheckedChange={checked => setParam("asciiEnabled", checked)} />
               {params.asciiEnabled && renderSlider("asciiSize")}
+            </PanelSection>
+            <PanelSection title="Background">
+              <Switch checked={handBackground} name="Telekinesis Hand"
+                onCheckedChange={checked => {
+                  setHandBackground(checked);
+                  if (checked) updatePreviewMode("orb");
+                }} />
             </PanelSection>
             <PanelSection title={"Star Background"}>
               <Switch checked={params.starsEnabled} name={"Enable Stars"}
@@ -1201,6 +1228,11 @@ export function App(): React.JSX.Element {
             >
               {renderSlider("speed")}
             </PanelSection>
+            {(params.style === "fibonacciGeometry" || params.style === "mandelbrotBloom" || params.style === "prismaticKaleidoscope" || params.style === "spectralKaleidoscope") && (
+              <PanelSection title="Fractal">
+                {renderSlider("zoom", "Fractal Zoom")}
+              </PanelSection>
+            )}
 
             <PanelSection
               collapsed={sectionState.isCollapsed("colors")}
@@ -1227,7 +1259,7 @@ export function App(): React.JSX.Element {
             >
               {renderSlider("radius")}
               {renderSlider("contourDeform")}
-              {renderSlider("zoom")}
+              {params.style !== "fibonacciGeometry" && params.style !== "mandelbrotBloom" && params.style !== "prismaticKaleidoscope" && params.style !== "spectralKaleidoscope" && renderSlider("zoom")}
               {renderSlider("warp")}
               {renderSlider("ridgeAmt")}
               {renderSlider("sharp")}

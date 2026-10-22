@@ -30,25 +30,37 @@ export function AudioControls({ input, style, auraResponsive = false }: { input:
     if (!supported) stop();
   }, [supported, stop]);
   React.useEffect(() => {
+    const pagehide = () => stop();
+    window.addEventListener("pagehide", pagehide);
+    return () => {
+      request.current++;
+      input.stop();
+      window.removeEventListener("pagehide", pagehide);
+    };
+  }, [input, stop]);
+
+  React.useEffect(() => {
     let raf = 0;
+    const active = source === "mic" || source === "file";
     const paint = () => {
       if (meterRef.current) meterRef.current.value = input.level;
       for (const band of ["low", "mid", "high"] as const) {
         const meter = bandMeters.current[band];
         if (meter) meter.value = input.bands[band];
       }
-      raf = requestAnimationFrame(paint);
+      if (active && !document.hidden) raf = requestAnimationFrame(paint);
+    };
+    const visibility = () => {
+      cancelAnimationFrame(raf);
+      if (!document.hidden) paint();
     };
     paint();
-    const pagehide = () => stop();
-    window.addEventListener("pagehide", pagehide);
+    document.addEventListener("visibilitychange", visibility);
     return () => {
-      request.current++;
       cancelAnimationFrame(raf);
-      input.stop();
-      window.removeEventListener("pagehide", pagehide);
+      document.removeEventListener("visibilitychange", visibility);
     };
-  }, [input, stop]);
+  }, [input, source]);
 
   const start = async (file?: File) => {
     stop();
