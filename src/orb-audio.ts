@@ -23,6 +23,7 @@ export const auraAudioRules = [
 export const audioStyleStrengths: Partial<Record<StyleName, number>> = {
   siri: 0.8, voiceWave: 1, aurora: 0.65,
   plasma: 0.65, spectrum: 0.75, violetEmber: 0.7,
+  infiniteGaze: 0.7, visionaryFractal: 0.65,
 };
 export const audioFlowStrengths: Record<number, number> = Object.fromEntries(
   Object.entries(audioStyleStrengths).map(([style, strength]) => [styleFlowIndexes[style as StyleName], strength]),

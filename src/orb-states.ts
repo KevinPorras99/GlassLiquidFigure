@@ -76,6 +76,8 @@ type IdleStyleProfile = {
 };
 
 const idleProfilesByStyle: Record<StyleName, IdleStyleProfile> = {
+  infiniteGaze: { numeric: { speed: { scale: 0.3 }, zoom: { scale: 0.9 }, warp: { scale: 0.65 }, ridgeAmt: { scale: 0.7 }, sharp: { scale: 0.85 }, exposure: { scale: 0.72 } }, colors: { colorA: "#030305", colorB: "#28282E", colorC: "#88888A", colorD: "#B9B8B1", highlightColor: "#C0C0C0", glowColor: "#A5A5A3" } },
+  visionaryFractal: { numeric: { speed: { scale: 0.3 }, zoom: { scale: 0.9 }, sharp: { scale: 0.85 }, warp: { scale: 0.65 }, ridgeAmt: { scale: 0.7 }, exposure: { scale: 0.75 } }, colors: { colorA: "#0C061C", colorB: "#54247D", colorC: "#1C9B8D", colorD: "#BF9452", highlightColor: "#BFB494", glowColor: "#713DB0" } },
   galaxyCore: { numeric: { speed: { scale: 0.3 }, warp: { scale: 0.65 }, zoom: { scale: 0.85 }, ridgeAmt: { scale: 0.5 }, sharp: { scale: 0.8 }, exposure: { scale: 0.72 } }, colors: { colorA: "#040617", colorB: "#362B89", colorC: "#9544A2", colorD: "#6BAFBF", highlightColor: "#CADBE8", glowColor: "#493AB7" } },
   mysticMist: { numeric: { speed: { scale: 0.3 }, warp: { scale: 0.65 }, zoom: { scale: 0.85 }, ridgeAmt: { scale: 0.5 }, sharp: { scale: 0.8 }, exposure: { scale: 0.72 } }, colors: { colorA: "#051419", colorB: "#184D56", colorC: "#4A8886", colorD: "#A5BAAE", highlightColor: "#CADBE8", glowColor: "#216773" } },
   crystalLight: { numeric: { speed: { scale: 0.3 }, warp: { scale: 0.65 }, zoom: { scale: 0.85 }, ridgeAmt: { scale: 0.5 }, sharp: { scale: 0.8 }, exposure: { scale: 0.72 } }, colors: { colorA: "#061221", colorB: "#183F79", colorC: "#3FA2B2", colorD: "#B6BCBF", highlightColor: "#CADBE8", glowColor: "#2155A2" } },

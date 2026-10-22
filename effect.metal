@@ -1285,6 +1285,88 @@ metal::float3 glsCrystalLightFluid(metal::float2 p, float t, constant Uniforms& 
   return glsFinishPresetFluid(color, p, u);
 }
 
+metal::float3 glsVisionaryFractalFluid(metal::float2 p, float t, constant Uniforms& u) {
+  const metal::float2 audioP = glsRotate(p / (1.0 + u.audioBands.x * 0.14), u.audioBands.y * 0.1 * metal::sin(t * 2.0));
+  metal::float2 q = glsRotate(audioP, t * 0.035) * (1.05 + u.zoom * 0.65);
+  metal::float3 color = u.colorA.rgb;
+  float weight = 1.0;
+  float eyeSeed = 1.0;
+  for (int level = 0; level < 4; level = level + 1) {
+    const float r = metal::length(q);
+    const float angle = metal::atan2(q.y, q.x);
+    const float sector = angle - 1.04719755 * metal::floor(angle / 1.04719755 + 0.5);
+    const float hex = r * metal::cos(sector);
+    const float temple = metal::exp(-metal::abs(hex - 0.69) * (90.0 + u.sharp * 15.0));
+    const float orbit = metal::exp(-metal::abs(r - 0.86) * 110.0);
+    color = color + weight * (u.colorC.rgb * temple + u.colorB.rgb * orbit) * (0.35 + u.ridgeAmt * 0.7);
+    // Stable branch IDs keep each eye coherent while its blink timing varies.
+    const float blinkClock = t * 0.38 + eyeSeed * 0.731;
+    const float blinkCycle = metal::floor(blinkClock);
+    const float blinkRandom = metal::fract(metal::sin(blinkCycle * 127.1 + eyeSeed * 311.7) * 43758.5453);
+    const float blinkPhase = metal::fract(blinkClock) - (0.18 + blinkRandom * 0.64);
+    const float blink = metal::smoothstep(-0.035, 0.0, blinkPhase) * (1.0 - metal::smoothstep(0.0, 0.065, blinkPhase));
+    const float aperture = metal::max(1.0 - blink * u.renderViewport.w, 0.008);
+    const float lid = metal::abs(q.y / (0.52 * aperture)) + q.x * q.x;
+    const float inside = 1.0 - metal::smoothstep(0.516, 0.524, lid);
+    const float outline = metal::exp(-metal::abs(lid - 0.52) * 95.0);
+    const float iris = 1.0 - metal::smoothstep(0.215, 0.225, r);
+    const float pupil = metal::smoothstep(0.075, 0.095, r);
+    const float fibers = 0.5 + 0.5 * metal::sin(angle * 38.0 + r * 65.0 + metal::sin(angle * 13.0 - t * 0.3) * u.warp);
+    const metal::float3 irisColor = metal::mix(u.colorC.rgb, u.colorD.rgb, fibers) * pupil;
+    const metal::float3 eyeColor = metal::mix(u.colorB.rgb * 0.3 + u.colorD.rgb * 0.15, irisColor, iris);
+    color = metal::mix(color, eyeColor, inside * weight);
+    color = color + u.colorD.rgb * outline * weight * 0.85;
+    const metal::float2 glint = q - metal::float2(-0.055, 0.065);
+    color = color + u.highlightColor.rgb * metal::exp(-metal::dot(glint, glint) * 5000.0) * inside * weight;
+    eyeSeed = eyeSeed * 7.0 + metal::floor(angle / 1.04719755 + 0.5) + 3.0;
+    q = metal::float2(metal::cos(sector), metal::sin(sector)) * r;
+    q = glsRotate((q - metal::float2(0.7, 0.0)) * 2.65, 0.2 * metal::sin(t * 0.15));
+    weight = weight * 0.72;
+  }
+  return glsFinishPresetFluid(color * (1.0 + u.audioBands.z * 0.22), p, u);
+}
+
+// Log-polar tiles advect outward: constant phase implies exponentially growing radius.
+metal::float3 glsInfiniteGazeFluid(metal::float2 p, float t, constant Uniforms& u) {
+  const metal::float2 audioP = glsRotate(p / (1.0 + u.audioBands.x * 0.14), u.audioBands.y * 0.1 * metal::sin(t * 2.0));
+  const float r = metal::max(metal::length(audioP), 0.0001);
+  const float angle = metal::atan2(audioP.y, audioP.x);
+  const float radial = metal::log(r) * (3.6 + u.zoom * 2.0) - t * 0.65;
+  const float around = angle * 1.90985932 + metal::log(r) * u.warp * 0.45 - t * 0.16;
+  const metal::float2 tile = metal::float2(around + radial * 0.5, radial);
+  const metal::float2 cell = metal::fract(tile) - metal::float2(0.5);
+  const metal::float2 cellId = metal::floor(tile);
+  const float aa = metal::min(0.09, 0.004 / metal::max(r, 0.04));
+  const float border = 1.0 - metal::smoothstep(0.018, 0.018 + aa, metal::min(0.5 - metal::abs(cell.x), 0.5 - metal::abs(cell.y)));
+  const float seed = cellId.x * 17.0 + cellId.y * 53.0;
+  const float clock = t * 0.36 + seed * 0.17;
+  const float random = metal::fract(metal::sin(metal::floor(clock) * 127.1 + seed * 311.7) * 43758.5453);
+  const float phase = metal::fract(clock) - (0.18 + random * 0.64);
+  const float blink = metal::smoothstep(-0.035, 0.0, phase) * (1.0 - metal::smoothstep(0.0, 0.065, phase));
+  const float aperture = metal::max(1.0 - blink * u.renderViewport.w, 0.008);
+  const metal::float2 eye = metal::float2(cell.x, cell.y / aperture);
+  const float lid = metal::abs(eye.y) * 1.5 + eye.x * eye.x * 2.0;
+  const float inside = 1.0 - metal::smoothstep(0.27 - aa, 0.27 + aa, lid);
+  const float outline = metal::exp(-metal::abs(lid - 0.27) * (40.0 + u.sharp * 10.0));
+  const float irisR = metal::length(cell);
+  const float irisAngle = metal::atan2(cell.y, cell.x);
+  const float iris = 1.0 - metal::smoothstep(0.135 - aa, 0.135 + aa, irisR);
+  const float pupil = metal::smoothstep(0.048, 0.065, irisR);
+  const float fibers = 0.5 + 0.5 * metal::sin(irisAngle * 32.0 + irisR * 140.0);
+  const metal::float3 irisColor = metal::mix(u.colorB.rgb, u.colorC.rgb, fibers * 0.7) * pupil;
+  const metal::float3 eyeColor = metal::mix(u.colorC.rgb * 0.45, irisColor, iris);
+  metal::float3 color = metal::mix(u.colorA.rgb, eyeColor, inside);
+  color = color + u.colorC.rgb * outline * 0.6 + u.colorD.rgb * border * (0.35 + u.ridgeAmt * 0.65);
+  const metal::float2 glint = cell - metal::float2(-0.035, 0.045);
+  color = color + u.highlightColor.rgb * metal::exp(-metal::dot(glint, glint) * 7000.0) * inside;
+  // Resolve subpixel tiles into a luminous origin, fading naturally toward the rim.
+  const float detail = metal::smoothstep(0.025, 0.095, r);
+  color = metal::mix(u.colorD.rgb * 1.25, color, detail);
+  color = color + u.colorD.rgb * metal::exp(-r * r * 230.0) * 0.7;
+  color = color * (1.0 - metal::smoothstep(0.72, 1.22, r) * 0.65);
+  return glsFinishPresetFluid(color * (1.0 + u.audioBands.z * 0.22), p, u);
+}
+
 metal::float3 glsPresetFluid(
     metal::float2 pIn,
     int style,
@@ -1338,6 +1420,8 @@ metal::float3 glsPresetFluid(
     }
     if (style == 25) { return glsGalaxyCoreFluid(p_16, t_13, u); }
     if (style == 26) { return glsMysticMistFluid(p_16, t_13, u); }
+    if (style == 29) { return glsInfiniteGazeFluid(p_16, t_13, u); }
+    if (style == 28) { return glsVisionaryFractalFluid(p_16, t_13, u); }
     if (style == 27) { return glsCrystalLightFluid(p_16, t_13, u); }
     if (style == 24) {
         return glsParticleRibbonFluid(p_16, t_13, u);
@@ -2008,6 +2092,54 @@ metal::float4 glsAuraBehind(metal::float4 base, metal::float2 uv01, constant Uni
   auto angle = metal::atan2(uv.y, uv.x);
   auto motion = 0.78 + 0.12 * metal::sin(angle * 3.0 - phase * 1.4) + 0.1 * metal::sin(angle * 5.0 + phase * 0.9);
   auto effect = int(u.auraEffect.x + 0.5);
+  if (effect == 4) {
+    // Interlocking white breakers with stippled dark bodies and inset eyes.
+    const float ringWidth = metal::max(u.aura.z, 0.03);
+    const float turn = angle - phase * 0.32;
+    const float sector = metal::fract(turn * 4.13802852 + 0.5) - 0.5;
+    const float x = sector * 2.0;
+    const float y = distance / ringWidth - 0.56;
+    const float aa = 1.0 / (glsRenderMinSize(u) * ringWidth);
+    const float taper = metal::max(1.0 - x * x, 0.0);
+    const float spine = 0.32 * metal::sin(x * 2.25) + 0.055 * x;
+    const float curl = y - spine;
+    const float bodyDistance = metal::abs(curl + 0.035) - 0.255 * taper;
+    const float body = 1.0 - metal::smoothstep(-aa, aa, bodyDistance);
+    // A narrow, bright upper lip rolls into a long hooked tip.
+    const float lipCenter = 0.105 * taper;
+    const float lipWidth = 0.095 * taper * (0.8 + 0.35 * x);
+    const float lipDistance = metal::abs(curl - lipCenter) - lipWidth;
+    const float lip = 1.0 - metal::smoothstep(-aa, aa, lipDistance);
+    const float tangentScale = 3.14159265 * (rad + ringWidth * 0.56) / (26.0 * ringWidth);
+    const metal::float2 local = metal::float2((x + 0.18) * tangentScale, y + 0.195);
+    // Rotate the entire eye in physical units, preserving its open oval shape.
+    const metal::float2 eye = glsRotate(local, -0.58);
+    const float eyeShape = metal::length(eye / metal::float2(0.125, 0.078));
+    const float eyeAA = aa / 0.078;
+    const float eyeMask = 1.0 - metal::smoothstep(1.0 - eyeAA, 1.0 + eyeAA, eyeShape);
+    const float eyeRim = metal::exp(-metal::abs(eyeShape - 1.08) * 14.0);
+    const float irisR = metal::length(eye);
+    const float iris = 1.0 - metal::smoothstep(0.048, 0.06, irisR);
+    const float pupil = metal::smoothstep(0.021, 0.03, irisR);
+    const float fibers = 0.5 + 0.5 * metal::sin(metal::atan2(eye.y, eye.x) * 29.0 + irisR * 160.0);
+    const float eyeLight = metal::mix(0.16, (0.28 + fibers * 0.32) * pupil, iris);
+    // Object-space stippling rotates with the crown rather than flickering.
+    const metal::float2 grainCell = metal::floor(metal::float2(sector * (rad + ringWidth * 0.56) * 6.2831853 / 26.0, distance) * 1250.0);
+    const float grain = metal::fract(metal::sin(metal::dot(grainCell, metal::float2(127.1, 311.7))) * 43758.5453);
+    const float stipple = metal::smoothstep(0.68, 0.94, grain) * (0.12 + 0.28 * taper);
+    const float etching = metal::exp(-metal::abs(curl + 0.12 * taper) * 100.0) * 0.18;
+    const float darkBody = 0.018 + stipple + etching;
+    const metal::float2 glint = eye - metal::float2(-0.017, 0.022);
+    const float sparkle = metal::exp(-metal::dot(glint, glint) * 22000.0) * eyeMask;
+    const float engraved = metal::mix(darkBody, eyeLight, eyeMask) + eyeRim * 0.5 + sparkle * 0.9;
+    const float light = metal::mix(engraved, 0.94, lip);
+    const metal::float3 tint = metal::mix(u.auraColor.xyz, u.auraColorC.xyz, 0.5 + 0.5 * metal::sin(turn * 3.0));
+    const metal::float3 ink = metal::mix(u.auraColorB.xyz * 0.015, tint, metal::clamp(light, 0.0, 1.0));
+    const float outside = metal::smoothstep(0.005, 0.028, distance);
+    const float alpha = metal::clamp(body * outside * u.aura.y * 1.4, 0.0, 0.98);
+    return metal::float4(base.xyz + ink * alpha * (1.0 - base.w), base.w + alpha * (1.0 - base.w));
+  }
+
   auto pulse = 0.5 + 0.5 * metal::sin(phase * 2.8);
   auto pulseWidth = metal::select(1.0, 0.65 + 0.55 * pulse, effect == 1);
   auto width = metal::max(u.aura.z, 0.03) * motion * pulseWidth;

@@ -5,12 +5,12 @@ A real-time liquid glass orb editor built with React, WebGPU/WGSL, and Toolcraft
 
 ### Features
 
-- 13 editable animated orb presets
+- 18 editable animated orb presets, including Visionary Fractal and Infinite Gaze with optional random eye blinking
 - Shape selector: orb, cube in perspective, rhomboid, trapezoid, triangle, pentagon, hexagon, octagon, Flower of Life, Seed of Life, Vesica Piscis, and Metatron’s Cube; preserved in share links and Web/Swift exports
 - English interface
 - Controls for color, speed, shape, glass refraction, and outer glow
 - Optional twinkling star background with count and brightness controls, saved in share links and Web/Swift exports
-- Optional animated aura blending three colors with independent intensity, size, and motion controls, plus Flow, Pulse, Waves, and Spiral effects
+- Optional animated aura blending three colors with independent intensity, size, and motion controls, plus Flow, Pulse, Waves, Spiral, and a rotating Eye Ring effect
 - Optional aura audio response on every material: bass expands the halo, mids increase brightness, and treble accelerates effects
 - Dedicated orb preview and in-context scene preview
 - Shareable configurations stored in the URL hash
@@ -20,7 +20,7 @@ A real-time liquid glass orb editor built with React, WebGPU/WGSL, and Toolcraft
 
 ### Audio response
 
-Use **Audio response** in the right-side control panel to start the microphone or select a local audio file, then adjust the sensitivity (0–200%), smoothness, and Bass/Mids/Treble response. Live meters show each frequency band. Bass drives broad internal waves and contour motion, mids drive faster pulses, and treble adds fine vibration and highlights. Real band levels reach the shader to vibrate the internal waves like an equalizer. Audio response is available for Siri Wave, Voice Membrane, Aurora Veil, Neural Plasma, Prismatic Field, and Violet Core. Other presets remain unchanged; switching to an unsupported preset stops the active audio input. Audio is analyzed locally in the browser and is never uploaded. Microphone input is not played back.
+Use **Audio response** in the right-side control panel to start the microphone or select a local audio file, then adjust the sensitivity (0–200%), smoothness, and Bass/Mids/Treble response. Live meters show each frequency band. Bass drives broad internal waves and contour motion, mids drive faster pulses, and treble adds fine vibration and highlights. Real band levels reach the shader to vibrate the internal waves like an equalizer. Audio response is available for Siri Wave, Voice Membrane, Aurora Veil, Neural Plasma, Prismatic Field, Violet Core, Infinite Gaze, and Visionary Fractal. For Infinite Gaze and Visionary Fractal, bass expands the pattern, mids sway its rotation, and treble lifts its highlights. Other presets remain unchanged; switching to an unsupported preset stops the active audio input. Audio is analyzed locally in the browser and is never uploaded. Microphone input is not played back.
 
 Low, mid, and high frequency bands plus overall energy drive the contour, internal distortion, highlights, and motion speed. Linear spectral energy separates the bands, with a noise gate and configurable fast attack/slow release to prevent jitter. Pausing audio eases the orb back to its base appearance; stopping the input or setting sensitivity to 0 restores the original preset parameters. Audio modulation is applied after state transitions and does not overwrite presets, colors, or URL parameters. This feature modulates the existing procedural animation; it does not embed or reproduce the reference site's fluid solver.
 

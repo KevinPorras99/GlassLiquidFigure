@@ -89,6 +89,9 @@ import galaxyCorePreviewUrl from "./assets/presets/galaxyCore.svg";
 import mysticMistPreviewUrl from "./assets/presets/mysticMist.svg";
 import crystalLightPreviewUrl from "./assets/presets/crystalLight.svg";
 
+import infiniteGazePreviewUrl from "./assets/presets/infiniteGaze.svg";
+import visionaryFractalPreviewUrl from "./assets/presets/visionaryFractal.svg";
+
 const stylePreviewUrls: Record<StyleName, string> = {
   siri: siriPreviewUrl,
   voiceWave: voiceWavePreviewUrl,
@@ -106,6 +109,8 @@ const stylePreviewUrls: Record<StyleName, string> = {
   galaxyCore: galaxyCorePreviewUrl,
   mysticMist: mysticMistPreviewUrl,
   crystalLight: crystalLightPreviewUrl,
+  infiniteGaze: infiniteGazePreviewUrl,
+  visionaryFractal: visionaryFractalPreviewUrl,
 };
 const compactPreviewStyles = new Set<StyleName>([
   "particleRibbon",
@@ -137,7 +142,7 @@ type NumericSpec = {
 };
 
 const ridgeStyles: readonly StyleName[] = [
-  "galaxyCore", "mysticMist", "crystalLight",
+  "infiniteGaze", "visionaryFractal", "galaxyCore", "mysticMist", "crystalLight",
   "siri",
   "voiceWave",
   "spectrum",
@@ -149,6 +154,7 @@ const ridgeStyles: readonly StyleName[] = [
   "refractiveBlob",
 ];
 const sharpStyles: readonly StyleName[] = [
+  "infiniteGaze", "visionaryFractal",
   "crystalLight",
   "frost",
   "plasma",
@@ -396,6 +402,8 @@ function readEditorStateFromHash(): OrbEditorState {
 
   params.autoRotate = search.get("autoRotate") === "1";
   params.asciiEnabled = search.get("ascii") === "1";
+  const eyeBlink = search.get("eyeBlink");
+  if (eyeBlink === "0" || eyeBlink === "1") params.eyeBlinkEnabled = eyeBlink === "1";
   params.starsEnabled = search.get("stars") === "1";
   params.auraEnabled = search.get("aura") === "1";
   params.auraAudioEnabled = search.get("auraAudio") === "1";
@@ -487,6 +495,7 @@ function writeHash(
   search.set("shape", params.shape);
   search.set("autoRotate", params.autoRotate ? "1" : "0");
   search.set("ascii", params.asciiEnabled ? "1" : "0");
+  search.set("eyeBlink", params.eyeBlinkEnabled ? "1" : "0");
   search.set("stars", params.starsEnabled ? "1" : "0");
   search.set("aura", params.auraEnabled ? "1" : "0");
   search.set("auraAudio", params.auraAudioEnabled ? "1" : "0");
@@ -1059,6 +1068,12 @@ export function App(): React.JSX.Element {
                 onCheckedChange={checked => setParam("autoRotate", checked)} />
               {params.autoRotate && renderSlider("rotationSpeed")}
             </PanelSection>
+            {(params.style === "visionaryFractal" || params.style === "infiniteGaze") && (
+              <PanelSection title="Fractal Eyes">
+                <Switch checked={params.eyeBlinkEnabled} name="Random Blinking"
+                  onCheckedChange={checked => setParam("eyeBlinkEnabled", checked)} />
+              </PanelSection>
+            )}
             <PanelSection title="ASCII">
               <Switch checked={params.asciiEnabled} name="Enable ASCII"
                 onCheckedChange={checked => setParam("asciiEnabled", checked)} />
@@ -1084,8 +1099,15 @@ export function App(): React.JSX.Element {
                     {auraEffectNames.map((effect, index) => (
                       <Button key={effect} aria-pressed={params.auraEffect === effect}
                         variant={params.auraEffect === effect ? "default" : "outline"}
-                        onClick={() => setParam("auraEffect", effect)}>
-                        {(["Flow", "Pulse", "Waves", "Spiral"])[index]}
+                        onClick={() => {
+                          setParam("auraEffect", effect);
+                          if (effect === "eyeRing") {
+                            setParam("auraColor", "#F4F4F0");
+                            setParam("auraColorB", "#A3A3AA");
+                            setParam("auraColorC", "#FFFFFF");
+                          }
+                        }}>
+                        {(["Flow", "Pulse", "Waves", "Spiral", "Eye Ring"])[index]}
                       </Button>
                     ))}
                   </div>

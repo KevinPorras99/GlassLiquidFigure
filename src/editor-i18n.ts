@@ -41,6 +41,8 @@ export const styleLabels: Record<Locale, Record<StyleName, string>> = {
     galaxyCore: "Galaxy Core",
     mysticMist: "Mystic Mist",
     crystalLight: "Crystal Light",
+    infiniteGaze: "Infinite Gaze",
+    visionaryFractal: "Visionary Fractal",
   },
 };
 

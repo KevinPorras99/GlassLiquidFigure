@@ -14,20 +14,23 @@ export type StyleName =
   | "chromaticMetal"
   | "galaxyCore"
   | "mysticMist"
-  | "crystalLight";
+  | "crystalLight"
+  | "visionaryFractal"
+  | "infiniteGaze";
 
 export const shapeNames = ["orb", "cube", "rhomboid", "trapezoid", "triangle", "pentagon", "hexagon", "octagon", "flowerOfLife", "seedOfLife", "vesicaPiscis", "metatron", "star", "star7"] as const;
 export type ShapeName = (typeof shapeNames)[number];
 export const shapeIndexes: Record<ShapeName, number> = { orb: 0, cube: 1, rhomboid: 2, trapezoid: 3, triangle: 4, pentagon: 5, hexagon: 6, octagon: 7, flowerOfLife: 8, seedOfLife: 9, vesicaPiscis: 10, metatron: 11, star: 12, star7: 13 };
 
-export const auraEffectNames = ["flow", "pulse", "waves", "spiral"] as const;
+export const auraEffectNames = ["flow", "pulse", "waves", "spiral", "eyeRing"] as const;
 export type AuraEffect = (typeof auraEffectNames)[number];
-export const auraEffectIndexes: Record<AuraEffect, number> = { flow: 0, pulse: 1, waves: 2, spiral: 3 };
+export const auraEffectIndexes: Record<AuraEffect, number> = { flow: 0, pulse: 1, waves: 2, spiral: 3, eyeRing: 4 };
 
 export type OrbParams = {
   shape: ShapeName;
   autoRotate: boolean;
   rotationSpeed: number;
+  eyeBlinkEnabled: boolean;
   asciiEnabled: boolean;
   asciiSize: number;
   starsEnabled: boolean;
@@ -103,6 +106,7 @@ const basePreset: StylePreset = {
   shape: "orb",
   autoRotate: false,
   rotationSpeed: 0.35,
+  eyeBlinkEnabled: true,
   asciiEnabled: false,
   asciiSize: 10,
   starsEnabled: false,
@@ -518,6 +522,23 @@ export const stylePresets: Record<StyleName, StylePreset> = {
     canvasColor: "#020409", glowColor: "#63B6B3",
     shellMid: "#DCF9E8", shellEdge: "#216773",
   },
+  infiniteGaze: {
+    ...basePreset,
+    speed: 0.7, zoom: 0.5, warp: 2.0, ridgeAmt: 0.7, sharp: 2.4,
+    shade: 0.05, sheen: 0.08, gloss: 0.12, exposure: 1.1,
+    glassOpacity: 0.12, shellMidAlpha: 0.06, shellEdgeAlpha: 0.1,
+    colorA: "#050507", colorB: "#38383E", colorC: "#B6B6B8", colorD: "#F7F5EC",
+    highlightColor: "#FFFFFF", canvasColor: "#000000", glowColor: "#DCDCD9",
+    shellInner: "#F0F0F0", shellMid: "#9B9B9B", shellEdge: "#404044",
+  },
+  visionaryFractal: {
+    ...basePreset,
+    glassEnabled: true, glassOpacity: 0.12, shellMidAlpha: 0.08, shellEdgeAlpha: 0.12, speed: 0.45, zoom: 0.5, warp: 2.2, ridgeAmt: 0.7, sharp: 2.5,
+    shade: 0.08, sheen: 0.12, gloss: 0.15, exposure: 1.05,
+    colorA: "#100825", colorB: "#7130A6", colorC: "#24CFBD", colorD: "#FFC66D",
+    highlightColor: "#FFF0C5", canvasColor: "#030109", glowColor: "#9751E8",
+    shellMid: "#24CFBD", shellEdge: "#7130A6",
+  },
   crystalLight: {
     ...basePreset,
     speed: 0.65, zoom: 0.4, warp: 2.4, ridgeAmt: 0.55, sharp: 2,
@@ -530,7 +551,7 @@ export const stylePresets: Record<StyleName, StylePreset> = {
 };
 
 export const styleNames: readonly StyleName[] = [
-  "galaxyCore", "mysticMist", "crystalLight",
+  "infiniteGaze", "visionaryFractal", "galaxyCore", "mysticMist", "crystalLight",
   "siri",
   "voiceWave",
   "particleRibbon",
@@ -547,6 +568,8 @@ export const styleNames: readonly StyleName[] = [
 ];
 
 export const styleFlowIndexes: Record<StyleName, number> = {
+  infiniteGaze: 29,
+  visionaryFractal: 28,
   galaxyCore: 25, mysticMist: 26, crystalLight: 27,
   siri: 9,
   voiceWave: 19,

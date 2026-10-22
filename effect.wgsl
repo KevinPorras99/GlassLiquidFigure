@@ -959,6 +959,88 @@ fn glsCrystalLightFluid(p: vec2<f32>, t: f32) -> vec3<f32> {
   return glsFinishPresetFluid(color, p);
 }
 
+fn glsVisionaryFractalFluid(p: vec2<f32>, t: f32) -> vec3<f32> {
+  let audioP: vec2<f32> = glsRotate(p / (1.0 + u.audioBands.x * 0.14), u.audioBands.y * 0.1 * sin(t * 2.0));
+  var q: vec2<f32> = glsRotate(audioP, t * 0.035) * (1.05 + u.zoom * 0.65);
+  var color: vec3<f32> = u.colorA.rgb;
+  var weight: f32 = 1.0;
+  var eyeSeed: f32 = 1.0;
+  for (var level: i32 = 0; level < 4; level = level + 1) {
+    let r: f32 = length(q);
+    let angle: f32 = atan2(q.y, q.x);
+    let sector: f32 = angle - 1.04719755 * floor(angle / 1.04719755 + 0.5);
+    let hex: f32 = r * cos(sector);
+    let temple: f32 = exp(-abs(hex - 0.69) * (90.0 + u.sharp * 15.0));
+    let orbit: f32 = exp(-abs(r - 0.86) * 110.0);
+    color = color + weight * (u.colorC.rgb * temple + u.colorB.rgb * orbit) * (0.35 + u.ridgeAmt * 0.7);
+    // Stable branch IDs keep each eye coherent while its blink timing varies.
+    let blinkClock: f32 = t * 0.38 + eyeSeed * 0.731;
+    let blinkCycle: f32 = floor(blinkClock);
+    let blinkRandom: f32 = fract(sin(blinkCycle * 127.1 + eyeSeed * 311.7) * 43758.5453);
+    let blinkPhase: f32 = fract(blinkClock) - (0.18 + blinkRandom * 0.64);
+    let blink: f32 = smoothstep(-0.035, 0.0, blinkPhase) * (1.0 - smoothstep(0.0, 0.065, blinkPhase));
+    let aperture: f32 = max(1.0 - blink * u.renderViewport.w, 0.008);
+    let lid: f32 = abs(q.y / (0.52 * aperture)) + q.x * q.x;
+    let inside: f32 = 1.0 - smoothstep(0.516, 0.524, lid);
+    let outline: f32 = exp(-abs(lid - 0.52) * 95.0);
+    let iris: f32 = 1.0 - smoothstep(0.215, 0.225, r);
+    let pupil: f32 = smoothstep(0.075, 0.095, r);
+    let fibers: f32 = 0.5 + 0.5 * sin(angle * 38.0 + r * 65.0 + sin(angle * 13.0 - t * 0.3) * u.warp);
+    let irisColor: vec3<f32> = mix(u.colorC.rgb, u.colorD.rgb, fibers) * pupil;
+    let eyeColor: vec3<f32> = mix(u.colorB.rgb * 0.3 + u.colorD.rgb * 0.15, irisColor, iris);
+    color = mix(color, eyeColor, inside * weight);
+    color = color + u.colorD.rgb * outline * weight * 0.85;
+    let glint: vec2<f32> = q - vec2<f32>(-0.055, 0.065);
+    color = color + u.highlightColor.rgb * exp(-dot(glint, glint) * 5000.0) * inside * weight;
+    eyeSeed = eyeSeed * 7.0 + floor(angle / 1.04719755 + 0.5) + 3.0;
+    q = vec2<f32>(cos(sector), sin(sector)) * r;
+    q = glsRotate((q - vec2<f32>(0.7, 0.0)) * 2.65, 0.2 * sin(t * 0.15));
+    weight = weight * 0.72;
+  }
+  return glsFinishPresetFluid(color * (1.0 + u.audioBands.z * 0.22), p);
+}
+
+// Log-polar tiles advect outward: constant phase implies exponentially growing radius.
+fn glsInfiniteGazeFluid(p: vec2<f32>, t: f32) -> vec3<f32> {
+  let audioP: vec2<f32> = glsRotate(p / (1.0 + u.audioBands.x * 0.14), u.audioBands.y * 0.1 * sin(t * 2.0));
+  let r: f32 = max(length(audioP), 0.0001);
+  let angle: f32 = atan2(audioP.y, audioP.x);
+  let radial: f32 = log(r) * (3.6 + u.zoom * 2.0) - t * 0.65;
+  let around: f32 = angle * 1.90985932 + log(r) * u.warp * 0.45 - t * 0.16;
+  let tile: vec2<f32> = vec2<f32>(around + radial * 0.5, radial);
+  let cell: vec2<f32> = fract(tile) - vec2<f32>(0.5);
+  let cellId: vec2<f32> = floor(tile);
+  let aa: f32 = min(0.09, 0.004 / max(r, 0.04));
+  let border: f32 = 1.0 - smoothstep(0.018, 0.018 + aa, min(0.5 - abs(cell.x), 0.5 - abs(cell.y)));
+  let seed: f32 = cellId.x * 17.0 + cellId.y * 53.0;
+  let clock: f32 = t * 0.36 + seed * 0.17;
+  let random: f32 = fract(sin(floor(clock) * 127.1 + seed * 311.7) * 43758.5453);
+  let phase: f32 = fract(clock) - (0.18 + random * 0.64);
+  let blink: f32 = smoothstep(-0.035, 0.0, phase) * (1.0 - smoothstep(0.0, 0.065, phase));
+  let aperture: f32 = max(1.0 - blink * u.renderViewport.w, 0.008);
+  let eye: vec2<f32> = vec2<f32>(cell.x, cell.y / aperture);
+  let lid: f32 = abs(eye.y) * 1.5 + eye.x * eye.x * 2.0;
+  let inside: f32 = 1.0 - smoothstep(0.27 - aa, 0.27 + aa, lid);
+  let outline: f32 = exp(-abs(lid - 0.27) * (40.0 + u.sharp * 10.0));
+  let irisR: f32 = length(cell);
+  let irisAngle: f32 = atan2(cell.y, cell.x);
+  let iris: f32 = 1.0 - smoothstep(0.135 - aa, 0.135 + aa, irisR);
+  let pupil: f32 = smoothstep(0.048, 0.065, irisR);
+  let fibers: f32 = 0.5 + 0.5 * sin(irisAngle * 32.0 + irisR * 140.0);
+  let irisColor: vec3<f32> = mix(u.colorB.rgb, u.colorC.rgb, fibers * 0.7) * pupil;
+  let eyeColor: vec3<f32> = mix(u.colorC.rgb * 0.45, irisColor, iris);
+  var color: vec3<f32> = mix(u.colorA.rgb, eyeColor, inside);
+  color = color + u.colorC.rgb * outline * 0.6 + u.colorD.rgb * border * (0.35 + u.ridgeAmt * 0.65);
+  let glint: vec2<f32> = cell - vec2<f32>(-0.035, 0.045);
+  color = color + u.highlightColor.rgb * exp(-dot(glint, glint) * 7000.0) * inside;
+  // Resolve subpixel tiles into a luminous origin, fading naturally toward the rim.
+  let detail: f32 = smoothstep(0.025, 0.095, r);
+  color = mix(u.colorD.rgb * 1.25, color, detail);
+  color = color + u.colorD.rgb * exp(-r * r * 230.0) * 0.7;
+  color = color * (1.0 - smoothstep(0.72, 1.22, r) * 0.65);
+  return glsFinishPresetFluid(color * (1.0 + u.audioBands.z * 0.22), p);
+}
+
 fn glsPresetFluid(pIn: vec2<f32>, style: i32, t: f32) -> vec3<f32> {
   let p = pIn - vec2<f32>(0.0, glsAudioWave(pIn.x, t));
   if (style == 9) { return glsSiriFluid(p, t); }
@@ -975,6 +1057,8 @@ fn glsPresetFluid(pIn: vec2<f32>, style: i32, t: f32) -> vec3<f32> {
   if (style == 23) { return glsRefractiveBlobFluid(p, t); }
   if (style == 25) { return glsGalaxyCoreFluid(p, t); }
   if (style == 26) { return glsMysticMistFluid(p, t); }
+  if (style == 29) { return glsInfiniteGazeFluid(p, t); }
+  if (style == 28) { return glsVisionaryFractalFluid(p, t); }
   if (style == 27) { return glsCrystalLightFluid(p, t); }
   if (style == 24) { return glsParticleRibbonFluid(p, t); }
   return glsFrostFluid(p, t);
@@ -1577,6 +1661,54 @@ fn glsAuraBehind(base: vec4<f32>, uv01: vec2<f32>) -> vec4<f32> {
   let angle = atan2(uv.y, uv.x);
   let motion = 0.78 + 0.12 * sin(angle * 3.0 - phase * 1.4) + 0.1 * sin(angle * 5.0 + phase * 0.9);
   let effect = i32(u.auraEffect.x + 0.5);
+  if (effect == 4) {
+    // Interlocking white breakers with stippled dark bodies and inset eyes.
+    let ringWidth: f32 = max(u.aura.z, 0.03);
+    let turn: f32 = angle - phase * 0.32;
+    let sector: f32 = fract(turn * 4.13802852 + 0.5) - 0.5;
+    let x: f32 = sector * 2.0;
+    let y: f32 = distance / ringWidth - 0.56;
+    let aa: f32 = 1.0 / (glsRenderMinSize() * ringWidth);
+    let taper: f32 = max(1.0 - x * x, 0.0);
+    let spine: f32 = 0.32 * sin(x * 2.25) + 0.055 * x;
+    let curl: f32 = y - spine;
+    let bodyDistance: f32 = abs(curl + 0.035) - 0.255 * taper;
+    let body: f32 = 1.0 - smoothstep(-aa, aa, bodyDistance);
+    // A narrow, bright upper lip rolls into a long hooked tip.
+    let lipCenter: f32 = 0.105 * taper;
+    let lipWidth: f32 = 0.095 * taper * (0.8 + 0.35 * x);
+    let lipDistance: f32 = abs(curl - lipCenter) - lipWidth;
+    let lip: f32 = 1.0 - smoothstep(-aa, aa, lipDistance);
+    let tangentScale: f32 = 3.14159265 * (rad + ringWidth * 0.56) / (26.0 * ringWidth);
+    let local: vec2<f32> = vec2<f32>((x + 0.18) * tangentScale, y + 0.195);
+    // Rotate the entire eye in physical units, preserving its open oval shape.
+    let eye: vec2<f32> = glsRotate(local, -0.58);
+    let eyeShape: f32 = length(eye / vec2<f32>(0.125, 0.078));
+    let eyeAA: f32 = aa / 0.078;
+    let eyeMask: f32 = 1.0 - smoothstep(1.0 - eyeAA, 1.0 + eyeAA, eyeShape);
+    let eyeRim: f32 = exp(-abs(eyeShape - 1.08) * 14.0);
+    let irisR: f32 = length(eye);
+    let iris: f32 = 1.0 - smoothstep(0.048, 0.06, irisR);
+    let pupil: f32 = smoothstep(0.021, 0.03, irisR);
+    let fibers: f32 = 0.5 + 0.5 * sin(atan2(eye.y, eye.x) * 29.0 + irisR * 160.0);
+    let eyeLight: f32 = mix(0.16, (0.28 + fibers * 0.32) * pupil, iris);
+    // Object-space stippling rotates with the crown rather than flickering.
+    let grainCell: vec2<f32> = floor(vec2<f32>(sector * (rad + ringWidth * 0.56) * 6.2831853 / 26.0, distance) * 1250.0);
+    let grain: f32 = fract(sin(dot(grainCell, vec2<f32>(127.1, 311.7))) * 43758.5453);
+    let stipple: f32 = smoothstep(0.68, 0.94, grain) * (0.12 + 0.28 * taper);
+    let etching: f32 = exp(-abs(curl + 0.12 * taper) * 100.0) * 0.18;
+    let darkBody: f32 = 0.018 + stipple + etching;
+    let glint: vec2<f32> = eye - vec2<f32>(-0.017, 0.022);
+    let sparkle: f32 = exp(-dot(glint, glint) * 22000.0) * eyeMask;
+    let engraved: f32 = mix(darkBody, eyeLight, eyeMask) + eyeRim * 0.5 + sparkle * 0.9;
+    let light: f32 = mix(engraved, 0.94, lip);
+    let tint: vec3<f32> = mix(u.auraColor.rgb, u.auraColorC.rgb, 0.5 + 0.5 * sin(turn * 3.0));
+    let ink: vec3<f32> = mix(u.auraColorB.rgb * 0.015, tint, clamp(light, 0.0, 1.0));
+    let outside: f32 = smoothstep(0.005, 0.028, distance);
+    let alpha: f32 = clamp(body * outside * u.aura.y * 1.4, 0.0, 0.98);
+    return vec4<f32>(base.rgb + ink * alpha * (1.0 - base.a), base.a + alpha * (1.0 - base.a));
+  }
+
   let pulse = 0.5 + 0.5 * sin(phase * 2.8);
   let pulseWidth = select(1.0, 0.65 + 0.55 * pulse, effect == 1);
   let width = max(u.aura.z, 0.03) * motion * pulseWidth;

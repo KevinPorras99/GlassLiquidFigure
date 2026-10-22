@@ -45,6 +45,7 @@ export function writeOrbUniforms(
   target[164] = Math.max(1, renderScale);
   target[165] = params.asciiEnabled ? 1 : 0;
   target[166] = params.asciiSize;
+  target[167] = params.eyeBlinkEnabled ? 1 : 0;
   target[136] = shapeIndexes[params.shape] ?? 0;
   target.set([params.auraEnabled ? 1 : 0, params.auraIntensity, params.auraSize, params.auraSpeed], 140);
   target.set(rgb(params.auraColor), 144);
