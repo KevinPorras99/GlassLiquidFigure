@@ -1081,7 +1081,7 @@ export function App(): React.JSX.Element {
               <CodeIcon data-icon="inline-start" />
               {copy.copyCode}
             </Button>
-
+            <span className="creator-credit">Made by Kevin Porras</span>
           </div>
         </section>
 

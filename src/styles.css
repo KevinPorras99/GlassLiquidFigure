@@ -344,9 +344,20 @@ input {
   left: 50%;
   z-index: 2;
   display: flex;
+  flex-direction: column;
   align-items: center;
   gap: 8px;
   transform: translateX(-50%);
+}
+
+.creator-credit {
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: rgb(0 0 0 / 55%);
+  color: #dedede;
+  font-size: 11px;
+  line-height: 1.4;
+  white-space: nowrap;
 }
 
 .code-trigger {
