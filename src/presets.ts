@@ -32,8 +32,17 @@ export const auraEffectIndexes: Record<AuraEffect, number> = { flow: 0, pulse: 1
 
 export type OrbParams = {
   shape: ShapeName;
+  audioResponse: "waves" | "impact";
   autoRotate: boolean;
   rotationSpeed: number;
+  orbitRingsEnabled: boolean;
+  orbitRingCount: number;
+  orbitRingSpeed: number;
+  orbitRingWidth: number;
+  orbitRingColorA: string;
+  orbitRingColorB: string;
+  orbitRingEdgeColor: string;
+  orbitRingEyeColor: string;
   eyeBlinkEnabled: boolean;
   asciiEnabled: boolean;
   asciiSize: number;
@@ -108,8 +117,17 @@ type StylePreset = Omit<OrbParams, "style">;
 
 const basePreset: StylePreset = {
   shape: "orb",
+  audioResponse: "waves",
   autoRotate: false,
   rotationSpeed: 0.35,
+  orbitRingsEnabled: false,
+  orbitRingCount: 3,
+  orbitRingSpeed: 0.35,
+  orbitRingWidth: 0.09,
+  orbitRingColorA: "#066375",
+  orbitRingColorB: "#D63014",
+  orbitRingEdgeColor: "#FFA338",
+  orbitRingEyeColor: "#05CCC7",
   eyeBlinkEnabled: true,
   asciiEnabled: false,
   asciiSize: 10,

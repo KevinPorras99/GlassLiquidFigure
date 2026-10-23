@@ -1,4 +1,6 @@
 import effectSource from "../effect.wgsl?raw";
+import orbitRingsSource from "./orbit-rings.wgsl?raw";
+import audioImpactSource from "./audio-impact.wgsl?raw";
 
 const vertexAndFragment = `
 
@@ -358,16 +360,18 @@ fn solidColor(in: VOut) -> vec4<f32> {
 @fragment
 fn fs_main(in: VOut) -> @location(0) vec4<f32> {
   var sample = in;
-  sample.uv = asciiUv(in.uv);
-  if (u.shape.w > 0.5) { return asciiColor(solidColor(sample), in.uv); }
-  return asciiColor(figureColor(sample), in.uv);
+  let effectUv = asciiUv(in.uv);
+  sample.uv = physicalFigureUv(effectUv);
+  if (u.shape.w > 0.5) { return asciiColor(orbitRingsColor(physicalFigureColor(solidColor(sample), sample.uv), effectUv), in.uv); }
+  return asciiColor(orbitRingsColor(physicalFigureColor(figureColor(sample), sample.uv), effectUv), in.uv);
 }
 @fragment
 fn ribbon_composite_fs_main(in: VOut) -> @location(0) vec4<f32> {
   var sample = in;
-  sample.uv = asciiUv(in.uv);
-  return asciiColor(ribbonColor(sample), in.uv);
+  let effectUv = asciiUv(in.uv);
+  sample.uv = physicalFigureUv(effectUv);
+  return asciiColor(orbitRingsColor(physicalFigureColor(ribbonColor(sample), sample.uv), effectUv), in.uv);
 }
 `;
 
-export const orbShaderSource = `${effectSource}\n${vertexAndFragment}`;
+export const orbShaderSource = `${effectSource}\n${audioImpactSource}\n${orbitRingsSource}\n${vertexAndFragment}`;

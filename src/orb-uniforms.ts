@@ -1,6 +1,6 @@
 import { type OrbParams, styleFlowIndexes, shapeIndexes, auraEffectIndexes } from "./presets";
 
-export const orbUniformFloatCount = 168;
+export const orbUniformFloatCount = 192;
 export const orbColorOffset = 40;
 export const orbCanvasColorOffset = orbColorOffset + 10 * 4;
 
@@ -47,6 +47,12 @@ export function writeOrbUniforms(
   params: OrbParams,
   renderScale = 1,
 ): void {
+  // Match the non-intersecting shells in orbit-rings.wgsl and fit the
+  // outermost shell's perspective silhouette inside the preview.
+  const ringWidth = Math.max(0.03, Math.min(0.16, params.orbitRingWidth));
+  const ringCount = Math.max(1, Math.min(3, Math.round(params.orbitRingCount)));
+  const outerRadius = 1.28 + (ringCount - 1) * (2 * (ringWidth + 0.045) + 0.065) + 0.045 + ringWidth + 0.02;
+  const ringFit = Math.min(0.62, 0.88 * Math.sqrt(16 - outerRadius * outerRadius) / (4 * outerRadius));
   target.fill(0);
   target[0] = width;
   target[1] = height;
@@ -55,6 +61,11 @@ export function writeOrbUniforms(
   target[165] = params.asciiEnabled ? 1 : 0;
   target[166] = params.asciiSize;
   target[167] = params.eyeBlinkEnabled ? 1 : 0;
+  target.set(rgb(params.orbitRingColorA), 172);
+  target.set(rgb(params.orbitRingColorB), 176);
+  target.set(rgb(params.orbitRingEdgeColor), 180);
+  target.set(rgb(params.orbitRingEyeColor), 184);
+  target.set([params.orbitRingsEnabled ? 1 : 0, params.orbitRingCount, params.orbitRingSpeed, params.orbitRingWidth], 168);
   target[136] = shapeIndexes[params.shape] ?? 0;
   target.set([params.auraEnabled ? 1 : 0, params.auraIntensity, params.auraSize, params.auraSpeed], 140);
   target.set(rgb(params.auraColor), 144);
@@ -62,11 +73,14 @@ export function writeOrbUniforms(
   target.set(rgb(params.auraColorC), 156);
   target[160] = auraEffectIndexes[params.auraEffect] ?? 0;
   target[161] = params.auraAudioEnabled ? 1 : 0;
+  // Independent ring clock; the renderer advances it without audio modulation.
+  target[162] = time;
+  target[163] = params.audioResponse === "impact" ? 1 : 0;
 
   target.set(
     [
       params.speed,
-      params.radius,
+      params.radius * (params.orbitRingsEnabled ? ringFit : 1),
       params.zoom,
       params.warp,
       params.ridgeAmt,

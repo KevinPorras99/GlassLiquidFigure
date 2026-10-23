@@ -7,7 +7,7 @@
   "scripts": {
     "dev": "vite --host 127.0.0.1",
     "verify": "node scripts/verify-exports.mjs",
-    "build": "node scripts/verify-exports.mjs && node scripts/verify-audio.mjs && node scripts/verify-renderer.mjs && node scripts/verify-sacred-rotation.mjs && tsc -p tsconfig.json --noEmit && vite build",
+    "build": "node scripts/verify-exports.mjs && node scripts/verify-copy-code.mjs && node scripts/verify-audio.mjs && node scripts/verify-renderer.mjs && node scripts/verify-sacred-rotation.mjs && node scripts/verify-orbit-volume.mjs && tsc -p tsconfig.json --noEmit && vite build",
     "preview": "vite preview --host 127.0.0.1"
   },
   "dependencies": {

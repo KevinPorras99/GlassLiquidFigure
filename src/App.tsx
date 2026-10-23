@@ -1,4 +1,5 @@
 import * as React from "react";
+import { defaultOrbPreviewState, type OrbPreviewState } from "./preview-state";
 import { LoadingLyrics } from "./LoadingLyrics";
 import { Starfield, starfieldStyles } from "./starfield";
 import { CodeIcon, CopySimpleIcon } from "@phosphor-icons/react";
@@ -181,6 +182,9 @@ const particleRibbonStyles: readonly StyleName[] = ["particleRibbon"];
 
 const numericSpecs: readonly NumericSpec[] = [
   { key: "rotationSpeed", min: 0.1, max: 2, step: 0.05 },
+  { key: "orbitRingCount", min: 1, max: 3, step: 1 },
+  { key: "orbitRingSpeed", min: 0, max: 1.5, step: 0.01 },
+  { key: "orbitRingWidth", min: 0.03, max: 0.16, step: 0.005 },
   { key: "asciiSize", min: 5, max: 24, step: 1 },
   { key: "starsDensity", min: 20, max: 300, step: 1 },
   { key: "starsBrightness", min: 0, max: 1, step: 0.01 },
@@ -366,6 +370,10 @@ const colorKeys: readonly ColorKey[] = [
   "auraColor",
   "auraColorB",
   "auraColorC",
+  "orbitRingColorA",
+  "orbitRingColorB",
+  "orbitRingEdgeColor",
+  "orbitRingEyeColor",
 ];
 
 function clamp(value: number, min: number, max: number): number {
@@ -415,6 +423,8 @@ function readEditorStateFromHash(): OrbEditorState {
   if (shape && shapeNames.includes(shape as ShapeName)) params.shape = shape as ShapeName;
 
   params.autoRotate = search.get("autoRotate") === "1";
+  if (search.get("audioResponse") === "impact") params.audioResponse = "impact";
+  params.orbitRingsEnabled = search.get("orbitRings") === "1";
   params.asciiEnabled = search.get("ascii") === "1";
   const eyeBlink = search.get("eyeBlink");
   if (eyeBlink === "0" || eyeBlink === "1") params.eyeBlinkEnabled = eyeBlink === "1";
@@ -509,6 +519,8 @@ function writeHash(
   search.set("style", params.style);
   search.set("shape", params.shape);
   search.set("autoRotate", params.autoRotate ? "1" : "0");
+  search.set("audioResponse", params.audioResponse);
+  search.set("orbitRings", params.orbitRingsEnabled ? "1" : "0");
   search.set("ascii", params.asciiEnabled ? "1" : "0");
   search.set("eyeBlink", params.eyeBlinkEnabled ? "1" : "0");
   search.set("stars", params.starsEnabled ? "1" : "0");
@@ -594,6 +606,8 @@ export function App(): React.JSX.Element {
   const [exportModule, setExportModule] = React.useState<ExportModule | null>(null);
   const [exportError, setExportError] = React.useState("");
   const [codeState, setCodeState] = React.useState<OrbEditorState | null>(null);
+  const previewStateRef = React.useRef(defaultOrbPreviewState);
+  const [codePreview, setCodePreview] = React.useState<OrbPreviewState>(defaultOrbPreviewState);
   const canvasRef = React.useRef<HTMLCanvasElement | null>(null);
   const stageRef = React.useRef<HTMLElement | null>(null);
   const copyBufferRef = React.useRef<HTMLTextAreaElement | null>(null);
@@ -634,15 +648,15 @@ export function App(): React.JSX.Element {
 
   const webCode = React.useMemo(
     () => (codeState && exportModule && codePlatform === "web"
-      ? exportModule.createWebExport(codeState.configuration, codeState.activeState)
+      ? exportModule.createWebExport(codeState.configuration, codeState.activeState, codePreview)
       : ""),
-    [codeState, exportModule, codePlatform],
+    [codeState, exportModule, codePlatform, codePreview],
   );
   const swiftCode = React.useMemo(
     () => (codeState && exportModule && codePlatform === "swift"
-      ? exportModule.createSwiftExport(codeState.configuration, codeState.activeState)
+      ? exportModule.createSwiftExport(codeState.configuration, codeState.activeState, codePreview)
       : ""),
-    [codeState, exportModule, codePlatform],
+    [codeState, exportModule, codePlatform, codePreview],
   );
 
   React.useEffect(() => {
@@ -702,6 +716,7 @@ export function App(): React.JSX.Element {
       canvas,
       getTarget: () => renderTargetRef.current,
       getAudioBands: (dt) => audioInput.read(dt),
+      onPreviewState: (state) => { previewStateRef.current = state; },
       onError: (error) => {
         console.error("Figure renderer failed:", error);
         setErrorMessage(error.message);
@@ -762,8 +777,17 @@ export function App(): React.JSX.Element {
         shared: {
           ...createPresetOrbStateConfiguration(style).shared,
           shape: current.configuration.shared.shape,
+          audioResponse: current.configuration.shared.audioResponse,
           autoRotate: current.configuration.shared.autoRotate,
           rotationSpeed: current.configuration.shared.rotationSpeed,
+          orbitRingsEnabled: current.configuration.shared.orbitRingsEnabled,
+          orbitRingCount: current.configuration.shared.orbitRingCount,
+          orbitRingSpeed: current.configuration.shared.orbitRingSpeed,
+          orbitRingWidth: current.configuration.shared.orbitRingWidth,
+          orbitRingColorA: current.configuration.shared.orbitRingColorA,
+          orbitRingColorB: current.configuration.shared.orbitRingColorB,
+          orbitRingEdgeColor: current.configuration.shared.orbitRingEdgeColor,
+          orbitRingEyeColor: current.configuration.shared.orbitRingEyeColor,
           asciiEnabled: current.configuration.shared.asciiEnabled,
           asciiSize: current.configuration.shared.asciiSize,
           starsEnabled: current.configuration.shared.starsEnabled,
@@ -830,6 +854,7 @@ export function App(): React.JSX.Element {
   }, []);
 
   const openCode = React.useCallback(() => {
+    setCodePreview({ ...previewStateRef.current, scale: previewScale });
     setCodeState({
       activeState: editorState.activeState,
       configuration: {
@@ -843,7 +868,7 @@ export function App(): React.JSX.Element {
     });
     setCopiedPlatform(null);
     setCodeOpen(true);
-  }, [editorState]);
+  }, [editorState, previewScale]);
 
   const copyCode = React.useCallback(async () => {
     const code = codePlatform === "web" ? webCode : swiftCode;
@@ -1092,6 +1117,17 @@ export function App(): React.JSX.Element {
                 onCheckedChange={checked => setParam("autoRotate", checked)} />
               {params.autoRotate && renderSlider("rotationSpeed")}
             </PanelSection>
+            <PanelSection title="3D Orbit Rings">
+              <Switch checked={params.orbitRingsEnabled} name="Psychedelic Rings"
+                onCheckedChange={checked => setParam("orbitRingsEnabled", checked)} />
+              {params.orbitRingsEnabled && <>
+                {renderSlider("orbitRingCount")}
+                {renderSlider("orbitRingSpeed")}
+                {renderSlider("orbitRingWidth")}
+                {colorControl(<Color inputs={[colorInput("orbitRingColorA"), colorInput("orbitRingColorB")]} />)}
+                {colorControl(<Color inputs={[colorInput("orbitRingEdgeColor"), colorInput("orbitRingEyeColor")]} />)}
+              </>}
+            </PanelSection>
             {(params.style === "visionaryFractal" || params.style === "infiniteGaze") && (
               <PanelSection title="Fractal Eyes">
                 <Switch checked={params.eyeBlinkEnabled} name="Random Blinking"
@@ -1153,7 +1189,7 @@ export function App(): React.JSX.Element {
                 </>
               ) : null}
             </PanelSection>
-            <AudioControls key={audioResetKey} input={audioInput} style={params.style} auraResponsive={params.auraEnabled && params.auraAudioEnabled} />
+            <AudioControls key={audioResetKey} input={audioInput} style={params.style} response={params.audioResponse} onResponseChange={response => setParam("audioResponse", response)} auraResponsive={params.auraEnabled && params.auraAudioEnabled} />
             {previewMode === "scene" ? (
               <PanelSection
                 collapsed={sectionState.isCollapsed("scene")}

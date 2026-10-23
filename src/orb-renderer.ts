@@ -1,11 +1,12 @@
 import { particleRibbonInstanceCount } from "./particle-ribbon";
+import type { OrbPreviewState } from "./preview-state";
 import { styleFlowIndexes, type OrbParams } from "./presets";
 import {
   createOrbTransitionController,
   type OrbRenderTarget,
 } from "./orb-states";
 import { orbUniformFloatCount, writeOrbUniforms } from "./orb-uniforms";
-import { applyAudioUniforms, type AudioBands } from "./orb-audio";
+import { applyAudioUniforms, createAudioImpactResponse, type AudioBands } from "./orb-audio";
 
 export type OrbRendererOptions = {
   canvas: HTMLCanvasElement;
@@ -13,6 +14,7 @@ export type OrbRendererOptions = {
   getAudioBands?: (dt: number) => AudioBands;
   onError: (error: Error) => void;
   onReady: () => void;
+  onPreviewState?: (state: OrbPreviewState) => void;
 };
 
 export function createOrbRenderer({
@@ -21,6 +23,7 @@ export function createOrbRenderer({
   getAudioBands,
   onError,
   onReady,
+  onPreviewState,
 }: OrbRendererOptions): () => void {
   let disposed = false;
   let animationFrame = 0;
@@ -30,6 +33,8 @@ export function createOrbRenderer({
   let failed = false;
   let lastFrameAt: number | null = null;
   let motionPhase = 0;
+  let ringTime = 0;
+  const impactResponse = createAudioImpactResponse();
   let yaw = 0;
   let pitch = 0;
   let view3d = false;
@@ -310,9 +315,12 @@ export function createOrbRenderer({
         values[137] = pitch;
         values[138] = yaw;
         values[139] = view3d ? 1 : 0;
-        if (getAudioBands) applyAudioUniforms(values, getAudioBands(frameDelta));
+        if (getAudioBands) applyAudioUniforms(values, impactResponse(getAudioBands(frameDelta), frameDelta, params.audioResponse === "impact"));
         motionPhase += frameDelta * Math.max(values[3], 0);
         values[2] = motionPhase / Math.max(values[3], 0.001);
+        ringTime += frameDelta;
+        values[162] = ringTime;
+        onPreviewState?.({ pitch, yaw, view3d, motionPhase, ringTime, scale: 1, params });
         device.queue.writeBuffer(uniformBuffer, 0, values);
 
         const isParticleRibbon =

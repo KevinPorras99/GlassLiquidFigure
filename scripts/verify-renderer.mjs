@@ -71,7 +71,8 @@ try {
   });
   let params = { style: 'siri', ...stylePresets.siri };
   const errors = [];
-  const stop = createOrbRenderer({ canvas, getTarget: () => ({ state: 'thinking', params, activationDuration: 0, transitionDuration: 0 }), onReady() {}, onError: error => errors.push(error) });
+  let bands = { low: 0, mid: 0, high: 0, all: 0 };
+  const stop = createOrbRenderer({ canvas, getAudioBands: () => bands, getTarget: () => ({ state: 'thinking', params, activationDuration: 0, transitionDuration: 0 }), onReady() {}, onError: error => errors.push(error) });
   const flush = () => new Promise(resolve => setImmediate(resolve));
   const step = () => { const pending = [...frames.values()]; frames.clear(); pending.forEach(callback => callback(now += 16)); };
   // Dynamic shader imports can require I/O; a single event-loop tick is not readiness.
@@ -94,6 +95,12 @@ try {
   const stoppedAngle = lastUniforms[138];
   step();
   assert.equal(lastUniforms[138], stoppedAngle, 'Disabling rotation retains the current angle');
+  const ringTime = lastUniforms[162];
+  bands = { low: 1, mid: 1, high: 1, all: 1 };
+  step();
+  assert.ok(lastUniforms[3] > params.speed, 'Audio still modulates the figure');
+  assert.ok(Math.abs(lastUniforms[162] - ringTime - 0.016) < 1e-6, 'Audio must not accelerate the ring clock');
+  bands = { low: 0, mid: 0, high: 0, all: 0 };
   draws = 1;
   params = { style: 'particleRibbon', ...stylePresets.particleRibbon };
   step(); await flush(); step();

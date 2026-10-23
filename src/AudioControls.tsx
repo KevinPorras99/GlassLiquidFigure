@@ -4,8 +4,8 @@ import { PanelSection } from "@/toolcraft/ui/components/panel/panel-section";
 import { audioStyleStrengths, type OrbAudioInput } from "./orb-audio";
 import type { StyleName } from "./presets";
 
-export function AudioControls({ input, style, auraResponsive = false }: { input: OrbAudioInput; style: StyleName; auraResponsive?: boolean }) {
-  const materialSupported = audioStyleStrengths[style] !== undefined;
+export function AudioControls({ input, style, response, onResponseChange, auraResponsive = false }: { input: OrbAudioInput; style: StyleName; response: "waves" | "impact"; onResponseChange: (response: "waves" | "impact") => void; auraResponsive?: boolean }) {
+  const materialSupported = response === "impact" || audioStyleStrengths[style] !== undefined;
   const supported = materialSupported || auraResponsive;
   const [source, setSource] = React.useState<"off" | "pending" | "mic" | "file">("off");
   const [error, setError] = React.useState(false);
@@ -82,8 +82,12 @@ export function AudioControls({ input, style, auraResponsive = false }: { input:
 
   return <PanelSection title={"Audio response"}>
     <div className="orb-audio-controls">
+      <div className="orb-audio-actions" role="group" aria-label="Audio reaction style">
+        <Button variant={response === "waves" ? "default" : "outline"} aria-pressed={response === "waves"} onClick={() => onResponseChange("waves")}>Waves</Button>
+        <Button variant={response === "impact" ? "default" : "outline"} aria-pressed={response === "impact"} onClick={() => onResponseChange("impact")}>Physical Impact</Button>
+      </div>
       <p className="orb-audio-hint">{supported
-        ? (!materialSupported ? ("Sound drives aura size, brightness and motion") : ("Bass drives broad waves, mids drive pulses, treble adds fine vibration"))
+        ? (response === "impact" ? "Bass hits compress and release the figure, mids add vibration, treble catches the light" : !materialSupported ? ("Sound drives aura size, brightness and motion") : ("Bass drives broad waves, mids drive pulses, treble adds fine vibration"))
         : ("Audio response is unavailable for this preset")}</p>
       {supported && <>
         <div className="orb-audio-actions">

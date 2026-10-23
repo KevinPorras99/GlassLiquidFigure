@@ -18,6 +18,18 @@ try {
   }
   assert.deepEqual(audio.analyzeAudioSpectrum(new Float32Array(0), wave, 48000), audio.silentBands());
   const input = new audio.OrbAudioInput();
+  const impact = audio.createAudioImpactResponse();
+  const kick = impact({ low: 1, mid: 1, high: 1, all: 1 }, 1 / 60);
+  assert.ok(kick.low > 0 && kick.low < 1, 'Bass onset must create a bounded spring impulse');
+  assert.ok(kick.mid > 0 && kick.mid < 1, 'Mids have a fast attack');
+  assert.equal(kick.high, 1, 'Treble must catch transients immediately');
+  const recoil = impact(audio.silentBands(), 1 / 60);
+  assert.ok(recoil.low > kick.low, 'Bass spring carries momentum after a short hit');
+  assert.ok(recoil.high < 1 && recoil.high > 0, 'Treble highlights release quickly');
+  let settled;
+  for (let i = 0; i < 240; i++) settled = impact(audio.silentBands(), 1 / 60);
+  assert.deepEqual(settled, audio.silentBands(), 'Physical response returns to rest in silence');
+  assert.ok(Object.values(impact({ low: NaN, mid: Infinity, high: -1, all: 3 }, NaN)).every(Number.isFinite));
   assert.deepEqual(input.read(NaN), audio.silentBands());
   input.stop();
 
@@ -47,6 +59,29 @@ try {
   const nativeChecks = [];
   let nativeHelper = "";
   for (const style of presets.styleNames) {
+    const physicalConfig = states.createOrbStateConfiguration({ ...presets.stylePresets[style], style, audioResponse: 'impact', orbitRingsEnabled: true });
+    const physicalWeb = exports.createWebExport(physicalConfig, 'thinking');
+    const physicalSnippet = physicalWeb.slice(physicalWeb.indexOf('const audioRules ='), physicalWeb.indexOf('function srgbToLinear'));
+    const physicalApply = new Function(`${physicalSnippet}; return applyAudioUniforms;`)();
+    if (style === 'siri') {
+      const exportedResponse = new Function(`${physicalSnippet}; return createAudioImpactResponse;`)()();
+      const editorResponse = audio.createAudioImpactResponse();
+      for (const dt of [0, 1 / 120, 1 / 60, 1 / 30, 0.1, NaN]) {
+        for (const bands of [{ low: 1, mid: 0.7, high: 0.4, all: 0.8 }, audio.silentBands()]) {
+          assert.deepEqual(exportedResponse(bands, dt), editorResponse(bands, dt), 'Exported spring damping and transients must match the editor');
+        }
+      }
+    }
+    const physicalSeed = uniforms.createOrbUniformSnapshot(states.resolveOrbStateParams(physicalConfig, 'thinking'));
+    for (const bands of [audio.silentBands(), { low: 1, mid: 0.7, high: 0.4, all: 0.8 }, { low: NaN, mid: Infinity, high: -1, all: 4 }]) {
+      const actual = new Float32Array(physicalSeed), exported = new Float32Array(physicalSeed);
+      audio.applyAudioUniforms(actual, bands); physicalApply(exported, bands);
+      assert.deepEqual(actual, exported, 'Physical mode must match the exported runtime for every material');
+      assert.deepEqual(Array.from(actual.slice(0, 188)), physicalSeed.slice(0, 188), 'Physical mode must preserve flow speed, wave bands and orbit rings');
+      assert.ok(Array.from(actual).every(Number.isFinite));
+      if (Object.values(bands).every(v => v === 0)) assert.deepEqual(Array.from(actual), physicalSeed);
+      else assert.notDeepEqual(Array.from(actual), physicalSeed, 'Physical reaction works on all presets');
+    }
     const config = states.createPresetOrbStateConfiguration(style);
     const web = exports.createWebExport(config, "thinking");
     const swift = exports.createSwiftExport(config, "thinking");

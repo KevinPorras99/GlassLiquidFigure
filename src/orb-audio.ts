@@ -32,6 +32,7 @@ export const audioFlowStrengths: Record<number, number> = Object.fromEntries(
 export function applyAudioUniforms(values: Float32Array, bands: AudioBands): void {
   const strength = audioFlowStrengths[Math.round(values[15])] ?? 0;
   values.fill(0, 152, 156);
+  values.fill(0, 188, 192);
   if (values[140] > 0.5 && values[161] > 0.5) {
     for (const [index, band, additive, proportional, ceiling] of auraAudioRules) {
       const input = bands[band];
@@ -39,6 +40,11 @@ export function applyAudioUniforms(values: Float32Array, bands: AudioBands): voi
       if (!level) continue;
       values[index] = Math.min(Math.max(ceiling, values[index]), values[index] * (1 + proportional * level) + additive * level);
     }
+  }
+  if (values[163] > 0.5) {
+    const safe = (value: number) => Number.isFinite(value) ? Math.max(0, Math.min(1, value)) : 0;
+    values.set([safe(bands.low), safe(bands.mid), safe(bands.high), safe(bands.all)], 188);
+    return;
   }
   if (!strength) return;
   const safeBand = (value: number) => (Number.isFinite(value) ? Math.max(0, Math.min(1, value)) : 0) * strength;
@@ -49,6 +55,33 @@ export function applyAudioUniforms(values: Float32Array, bands: AudioBands): voi
     if (!level) continue;
     values[index] = Math.min(Math.max(ceiling, values[index]), values[index] * (1 + proportional * level) + additive * level);
   }
+}
+
+/** Bounded spring recoil for bass hits, fast mids, and short treble transients. */
+export function createAudioImpactResponse() {
+  let position = 0, velocity = 0, previousBass = 0, mids = 0, treble = 0;
+  return (bands: AudioBands, dt: number, active = true): AudioBands => {
+    if (!active) { position = 0; velocity = 0; previousBass = 0; mids = 0; treble = 0; return bands; }
+    const safe = (value: number) => Number.isFinite(value) ? Math.max(0, Math.min(1, value)) : 0;
+    const elapsed = Number.isFinite(dt) ? Math.max(0, Math.min(0.1, dt)) : 0;
+    const bass = safe(bands.low), mid = safe(bands.mid), high = safe(bands.high);
+    const onset = Math.max(0, bass - previousBass);
+    previousBass = bass;
+    velocity += onset * 4;
+    const steps = Math.max(1, Math.ceil(elapsed * 240));
+    const step = elapsed / steps;
+    for (let i = 0; i < steps; i++) {
+      velocity += ((bass * 0.75 - position) * 180 - velocity * 17) * step;
+      position += velocity * step;
+    }
+    position = Math.max(0, Math.min(1, position));
+    if (bass === 0 && position < 0.0001 && Math.abs(velocity) < 0.001) { position = 0; velocity = 0; }
+    mids += (mid - mids) * (1 - Math.exp(-elapsed / (mid > mids ? 0.018 : 0.09)));
+    treble = Math.max(high, treble * Math.exp(-elapsed / 0.065));
+    if (mids < 0.0001) mids = 0;
+    if (treble < 0.0001) treble = 0;
+    return { low: position, mid: mids, high: treble, all: safe(bands.all) };
+  };
 }
 
 /** Analyze linear spectral energy so band levels are independent of FFT bin count. */

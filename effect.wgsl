@@ -127,6 +127,12 @@ struct Uniforms {
   auraColorC: vec4<f32>,
   auraEffect: vec4<f32>,
   renderViewport: vec4<f32>,
+  orbitRings: vec4<f32>,
+  orbitRingColorA: vec4<f32>,
+  orbitRingColorB: vec4<f32>,
+  orbitRingEdgeColor: vec4<f32>,
+  orbitRingEyeColor: vec4<f32>,
+  physicalAudio: vec4<f32>,
 };
 @group(0) @binding(0) var<uniform> u: Uniforms;
 
@@ -1140,8 +1146,9 @@ fn glsMandelbrotBloomFluid(p: vec2<f32>, t: f32) -> vec3<f32> {
 }
 
 // Recursive sixfold mirror chambers create a stained-glass floral mandala.
-fn glsPrismaticKaleidoscopeFluid(p: vec2<f32>, t: f32) -> vec3<f32> {
-  var q: vec2<f32> = glsRotate(p, t * 0.07) * 1.6 / exp((u.zoom - 0.5) * 2.5);
+fn glsPrismaticKaleidoscopeLayer(p: vec2<f32>, t: f32, growth: f32) -> vec3<f32> {
+  // Sampling inward makes the fractal geometry itself expand away from center.
+  var q: vec2<f32> = glsRotate(p, t * 0.04) * 1.6 / exp((u.zoom - 0.5) * 2.5 + growth);
   var color: vec3<f32> = u.colorA.rgb;
   var weight: f32 = 1.0;
   for (var depth: i32 = 0; depth < 4; depth = depth + 1) {
@@ -1173,6 +1180,15 @@ fn glsPrismaticKaleidoscopeFluid(p: vec2<f32>, t: f32) -> vec3<f32> {
   let rosette: f32 = exp(-length(p) * 42.0);
   color = color + u.highlightColor.rgb * rosette * 0.7;
   return glsFinishPresetFluid(color, p);
+}
+
+// Both layers travel outward; blend in a fresh small-scale layer before reset.
+fn glsPrismaticKaleidoscopeFluid(p: vec2<f32>, t: f32) -> vec3<f32> {
+  let growth: f32 = fract(t * 0.32 / 1.6) * 1.6;
+  let current: vec3<f32> = glsPrismaticKaleidoscopeLayer(p, t, growth);
+  if (growth < 1.15) { return current; }
+  let emerging: vec3<f32> = glsPrismaticKaleidoscopeLayer(p, t, growth - 1.6);
+  return mix(current, emerging, smoothstep(1.15, 1.6, growth));
 }
 
 // Thin mirrored interference filaments: cyan inner geometry and white vapor.

@@ -39,7 +39,7 @@ try {
   function extractOpticalWeights(source, patterns, backend) {
     return Object.fromEntries(
       Object.entries(patterns).map(([name, pattern]) => {
-        const match = source.match(pattern);
+        const match = source.replace(/\r\n/g, "\n").match(pattern);
         assert.ok(match, `${backend}: ${name} 光学权重缺失`);
         return [name, match.slice(1).map(Number)];
       }),
@@ -130,7 +130,7 @@ try {
   );
   assert.equal(
     uniforms.orbUniformFloatCount,
-    uniforms.orbColorOffset + 24 * 4 + 32,
+    uniforms.orbColorOffset + 24 * 4 + 56,
     "uniform 缓冲区长度必须与标量参数和 24 组颜色精确匹配",
   );
   assert.equal(
@@ -227,6 +227,30 @@ try {
   assert.doesNotThrow(() => createSwiftExport(legacyConfiguration, "thinking"));
 
   assert.equal(uniforms.createOrbUniformSnapshot(presets.effectDefaults)[140], 0, "Aura is disabled by default");
+  assert.equal(uniforms.createOrbUniformSnapshot(presets.effectDefaults)[168], 0, "Orbit rings are opt-in");
+  const ringColors = { orbitRingColorA: '#FF0000', orbitRingColorB: '#00FF00', orbitRingEdgeColor: '#0000FF', orbitRingEyeColor: '#FFFFFF' };
+  const colorConfig = orbStates.createOrbStateConfiguration({ ...presets.effectDefaults, ...ringColors });
+  for (const state of orbStates.orbStateNames) {
+    const restored = orbStates.resolveOrbStateParams(colorConfig, state);
+    for (const [key, value] of Object.entries(ringColors)) assert.equal(restored[key], value);
+    assert.deepEqual(uniforms.createOrbUniformSnapshot(restored).slice(172, 188), [1, 0, 0, 1, 0, 1, 0, 1, 0, 0, 1, 1, 1, 1, 1, 1]);
+  }
+  for (const count of [1, 2, 3]) {
+    const ringParams = { ...presets.effectDefaults, orbitRingsEnabled: true, orbitRingCount: count, orbitRingSpeed: 0, orbitRingWidth: 0.06 };
+    const config = orbStates.createOrbStateConfiguration(ringParams);
+    for (const state of orbStates.orbStateNames) {
+      const snapshot = uniforms.createOrbUniformSnapshot(orbStates.resolveOrbStateParams(config, state));
+      assert.deepEqual(snapshot.slice(168, 171), [1, count, 0], 'Ring settings survive state changes, including paused orbits');
+      assert.ok(Math.abs(snapshot[171] - 0.06) < 1e-6);
+      const outerRadius = 1.28 + (count - 1) * (2 * (ringParams.orbitRingWidth + 0.045) + 0.065) + 0.045 + ringParams.orbitRingWidth + 0.02;
+      const silhouette = 4 * outerRadius / Math.sqrt(16 - outerRadius * outerRadius);
+      assert.ok(snapshot[4] * silhouette <= ringParams.radius * 0.88 + 1e-6, 'Fit separated orbit rings inside the preview');
+    }
+    for (const exported of [createWebExport(config, 'thinking'), createSwiftExport(config, 'thinking')]) {
+      assert.ok(exported.includes('orbitRingsColor'), 'Exports include the 3D ring compositor');
+      assert.ok(exported.includes('orbitRingHit'), 'Exports include perspective ray intersections');
+    }
+  }
   for (const shape of Object.keys(presets.shapeIndexes)) {
     const params = { ...presets.effectDefaults, shape, auraEnabled: true, auraIntensity: 0.8, auraSize: 0.3, auraSpeed: 0, auraColor: "#FF8000", auraColorB: "#0040FF", auraColorC: "#00FF80", auraEffect: "spiral" };
     const config = orbStates.createOrbStateConfiguration(params);

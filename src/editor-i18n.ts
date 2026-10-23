@@ -21,7 +21,11 @@ export type ColorKey =
   | "glowColor"
   | "auraColor"
   | "auraColorB"
-  | "auraColorC";
+  | "auraColorC"
+  | "orbitRingColorA"
+  | "orbitRingColorB"
+  | "orbitRingEdgeColor"
+  | "orbitRingEyeColor";
 
 export const styleLabels: Record<Locale, Record<StyleName, string>> = {
   en: {
@@ -59,6 +63,9 @@ export const numericLabels: Record<Locale, Record<NumericKey, string>> = {
     starsBrightness: "Star Brightness",
     asciiSize: "Character Size",
     rotationSpeed: "Rotation Speed",
+    orbitRingCount: "Ring Count",
+    orbitRingSpeed: "Orbit Speed",
+    orbitRingWidth: "Ring Width",
     speed: "Speed",
     radius: "Radius",
     contourDeform: "Contour Motion",
@@ -113,6 +120,10 @@ export const colorLabels: Record<Locale, Record<ColorKey, string>> = {
     auraColor: "Aura Color A",
     auraColorB: "Aura Color B",
     auraColorC: "Aura Color C",
+    orbitRingColorA: "Ring Color A",
+    orbitRingColorB: "Ring Color B",
+    orbitRingEdgeColor: "Ring Edges",
+    orbitRingEyeColor: "Ring Eyes",
   },
 };
 

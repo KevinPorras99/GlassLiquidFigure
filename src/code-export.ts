@@ -1,3 +1,4 @@
+import { defaultOrbPreviewState, type OrbPreviewState } from "./preview-state";
 import { createStars, createStarfieldMarkup, starfieldStyles } from "./starfield";
 import orbMetalSource from "../effect.metal?raw";
 import { createOrbUniformSnapshot, orbColorOffset } from "./orb-uniforms";
@@ -9,7 +10,7 @@ import {
   type OrbStateName,
 } from "./orb-states";
 import { orbShaderSource } from "./shader-source";
-import { audioRules, auraAudioRules, audioFlowStrengths } from "./orb-audio";
+import { audioRules, auraAudioRules, audioFlowStrengths, createAudioImpactResponse } from "./orb-audio";
 
 function formatSwiftFloats(values: number[]): string {
   const rows: string[] = [];
@@ -19,18 +20,27 @@ function formatSwiftFloats(values: number[]): string {
   return rows.join("\n");
 }
 
-function createStateSeeds(configuration: OrbStateConfiguration): Record<OrbStateName, number[]> {
-  return {
+function createStateSeeds(configuration: OrbStateConfiguration, preview: OrbPreviewState, initialState: OrbStateName): Record<OrbStateName, number[]> {
+  const seeds = {
     idle: createOrbUniformSnapshot(resolveOrbStateParams(configuration, "idle")),
     thinking: createOrbUniformSnapshot(resolveOrbStateParams(configuration, "thinking")),
   };
+  if (preview.params) seeds[initialState] = createOrbUniformSnapshot(preview.params);
+  for (const values of Object.values(seeds)) {
+    values[137] = preview.pitch;
+    values[138] = preview.yaw;
+    values[139] = preview.view3d || configuration.shared.autoRotate ? 1 : 0;
+    values[162] = preview.ringTime ?? 0;
+  }
+  return seeds;
 }
 
 export function createWebExport(
   configuration: OrbStateConfiguration,
   initialState: OrbStateName,
+  preview: OrbPreviewState = defaultOrbPreviewState,
 ): string {
-  const stateSeeds = createStateSeeds(configuration);
+  const stateSeeds = createStateSeeds(configuration, preview, initialState);
   const shaderLiteral = JSON.stringify(orbShaderSource);
 
   return `<!doctype html>
@@ -43,14 +53,14 @@ export function createWebExport(
   <style>
     html, body, canvas { width: 100%; height: 100%; margin: 0; }
     body { overflow: hidden; background: ${configuration.shared.canvasColor}; }
-    canvas { display: block; position: relative; }
+    canvas { display: block; position: relative; transform: scale(${preview.scale}); touch-action: none; }
     ${starfieldStyles}
     #status { position: fixed; inset: 0; display: grid; place-items: center; color: white; font: 14px system-ui; }
   </style>
 </head>
 <body>
   ${configuration.shared.starsEnabled ? createStarfieldMarkup(configuration.shared.starsDensity, configuration.shared.starsBrightness) : ""}
-  <canvas id="orb" aria-label="Animated liquid glass orb"></canvas>
+  <canvas id="orb" tabindex="0" aria-label="Animated figure. Drag to rotate; double-click or Escape to reset."></canvas>
   <div id="status" hidden></div>
   <script type="module">
     const shaderSource = ${shaderLiteral};
@@ -73,13 +83,53 @@ export function createWebExport(
     let transitionStartedAt = 0;
     let activeTransitionDuration = 0;
     let lastFrameAt = null;
-    let motionPhase = 0;
+    let motionPhase = ${preview.motionPhase};
+    let ringTime = ${preview.ringTime ?? 0};
+    let yaw = ${preview.yaw};
+    let pitch = ${preview.pitch};
+    let view3d = ${preview.view3d || configuration.shared.autoRotate};
+    const autoRotate = ${configuration.shared.autoRotate};
+    const rotationSpeed = ${configuration.shared.rotationSpeed};
+    let drag = null;
+    canvas.addEventListener("pointerdown", event => {
+      if (!event.isPrimary || event.button !== 0) return;
+      canvas.focus({ preventScroll: true });
+      canvas.setPointerCapture(event.pointerId);
+      drag = { id: event.pointerId, x: event.clientX, y: event.clientY };
+      view3d = true;
+    });
+    canvas.addEventListener("pointermove", event => {
+      if (!drag || event.pointerId !== drag.id) return;
+      const sensitivity = Math.PI * 2 / Math.max(200, Math.min(canvas.clientWidth, canvas.clientHeight));
+      yaw = (yaw + (event.clientX - drag.x) * sensitivity) % (Math.PI * 2);
+      pitch = (pitch + (event.clientY - drag.y) * sensitivity) % (Math.PI * 2);
+      drag.x = event.clientX; drag.y = event.clientY;
+    });
+    function endDrag(event) {
+      if (!drag || event.pointerId !== drag.id) return;
+      drag = null;
+      if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
+    }
+    for (const name of ["pointerup", "pointercancel", "lostpointercapture"]) canvas.addEventListener(name, endDrag);
+    function resetView() { yaw = 0; pitch = 0; view3d = false; }
+    canvas.addEventListener("dblclick", resetView);
+    canvas.addEventListener("keydown", event => {
+      if (event.key === "Escape" || event.key === "Home") { event.preventDefault(); resetView(); }
+      else if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)) {
+        event.preventDefault(); view3d = true;
+        yaw += event.key === "ArrowLeft" ? -0.12 : event.key === "ArrowRight" ? 0.12 : 0;
+        pitch += event.key === "ArrowUp" ? -0.12 : event.key === "ArrowDown" ? 0.12 : 0;
+      }
+    });
     const audioRules = ${JSON.stringify(audioRules)};
+    const createAudioImpactResponse = ${createAudioImpactResponse.toString()};
+    const impactResponse = createAudioImpactResponse();
     const auraAudioRules = ${JSON.stringify(auraAudioRules)};
     const audioFlowStrengths = ${JSON.stringify(audioFlowStrengths)};
     function applyAudioUniforms(values, bands) {
       const strength = audioFlowStrengths[Math.round(values[15])] ?? 0;
       values.fill(0, 152, 156);
+      values.fill(0, 188, 192);
       if (values[140] > 0.5 && values[161] > 0.5) {
         for (const [index, band, additive, proportional, ceiling] of auraAudioRules) {
           const input = bands[band];
@@ -87,6 +137,11 @@ export function createWebExport(
           if (!level) continue;
           values[index] = Math.min(Math.max(ceiling, values[index]), values[index] * (1 + proportional * level) + additive * level);
         }
+      }
+      if (values[163] > 0.5) {
+        const safe = value => Number.isFinite(value) ? Math.max(0, Math.min(1, value)) : 0;
+        values.set([safe(bands.low), safe(bands.mid), safe(bands.high), safe(bands.all)], 188);
+        return;
       }
       if (!strength) return;
       const safeBand = value => (Number.isFinite(value) ? Math.max(0, Math.min(1, value)) : 0) * strength;
@@ -134,7 +189,7 @@ export function createWebExport(
     function sampleTransition(now) {
       const progress = transitionProgress(now);
       for (let index = 3; index < displayedUniforms.length; index += 1) {
-        const colorComponent = (index >= ${orbColorOffset} && index < 136 || index >= 144 && index < 152 || index >= 156 && index < 160)
+        const colorComponent = (index >= ${orbColorOffset} && index < 136 || index >= 144 && index < 152 || index >= 156 && index < 160 || index >= 172 && index < 188)
           && (index - ${orbColorOffset}) % 4 < 3;
         displayedUniforms[index] = colorComponent
           ? mixSrgb(fromUniforms[index], targetUniforms[index], progress)
@@ -311,11 +366,18 @@ export function createWebExport(
             ? 0
             : Math.min(0.1, Math.max(0, (now - lastFrameAt) / 1000));
           lastFrameAt = now;
-          applyAudioUniforms(values, audioBands);
+          if (autoRotate) {
+            view3d = true;
+            if (!drag) yaw = (yaw + frameDelta * rotationSpeed) % (Math.PI * 2);
+          }
+          values[137] = pitch; values[138] = yaw; values[139] = view3d ? 1 : 0;
+          applyAudioUniforms(values, impactResponse(audioBands, frameDelta, values[163] > 0.5));
           motionPhase += frameDelta * Math.max(values[3], 0);
           values[0] = width;
           values[1] = height;
           values[2] = motionPhase / Math.max(values[3], 0.001);
+          ringTime += frameDelta;
+          values[162] = ringTime;
           device.queue.writeBuffer(uniformBuffer, 0, values);
 
           const isParticleRibbon = Math.round(values[15]) === ribbonStyleIndex;
@@ -393,8 +455,9 @@ export function createWebExport(
 export function createSwiftExport(
   configuration: OrbStateConfiguration,
   initialState: OrbStateName,
+  preview: OrbPreviewState = defaultOrbPreviewState,
 ): string {
-  const stateSeeds = createStateSeeds(configuration);
+  const stateSeeds = createStateSeeds(configuration, preview, initialState);
 
   return `import Foundation
 import MetalKit
@@ -429,12 +492,48 @@ public struct LiquidOrbAudio: Sendable {
     }
 }
 
+private struct PhysicalAudioResponse {
+    var position: Float = 0
+    var velocity: Float = 0
+    var previousBass: Float = 0
+    var mids: Float = 0
+    var treble: Float = 0
+    mutating func sample(_ bands: LiquidOrbAudio, dt: CFTimeInterval, active: Bool) -> LiquidOrbAudio {
+        if !active { self = PhysicalAudioResponse(); return bands }
+        func safe(_ value: Float) -> Float { value.isFinite ? max(0, min(1, value)) : 0 }
+        let elapsed = Float(dt.isFinite ? max(0, min(0.1, dt)) : 0)
+        let bass = safe(bands.low), mid = safe(bands.mid), high = safe(bands.high)
+        velocity += max(0, bass - previousBass) * 4
+        previousBass = bass
+        let steps = max(1, Int(ceil(Double(elapsed * 240))))
+        let step = elapsed / Float(steps)
+        for _ in 0..<steps {
+            velocity += ((bass * 0.75 - position) * 180 - velocity * 17) * step
+            position += velocity * step
+        }
+        position = max(0, min(1, position))
+        if bass == 0 && position < 0.0001 && abs(velocity) < 0.001 { position = 0; velocity = 0 }
+        mids += (mid - mids) * (1 - Float(exp(Double(-elapsed / (mid > mids ? 0.018 : 0.09)))))
+        treble = max(high, treble * Float(exp(Double(-elapsed / 0.065))))
+        if mids < 0.0001 { mids = 0 }
+        if treble < 0.0001 { treble = 0 }
+        return LiquidOrbAudio(low: position, mid: mids, high: treble, all: safe(bands.all))
+    }
+}
+
 private func applyOrbAudio(_ values: inout [Float], _ bands: LiquidOrbAudio) {
     let strengths: [Int: Float] = [${Object.entries(audioFlowStrengths).map(([key, value]) => `${key}: ${value}`).join(", ")}]
     for index in 152..<156 { values[index] = 0 }
+    for index in 188..<192 { values[index] = 0 }
     if values[140] > 0.5 && values[161] > 0.5 {
         func auraLevel(_ value: Float) -> Float { value.isFinite ? max(0, min(1, value)) : 0 }
 ${auraAudioRules.map(([index, band, additive, proportional, ceiling]) => `        if auraLevel(bands.${band}) > 0 { values[${index}] = min(max(${ceiling}, values[${index}]), values[${index}] * (1 + ${proportional} * auraLevel(bands.${band})) + ${additive} * auraLevel(bands.${band})) }`).join("\n")}
+    }
+    if values[163] > 0.5 {
+        func safe(_ value: Float) -> Float { value.isFinite ? max(0, min(1, value)) : 0 }
+        values[188] = safe(bands.low); values[189] = safe(bands.mid)
+        values[190] = safe(bands.high); values[191] = safe(bands.all)
+        return
     }
     guard let strength = strengths[Int(values[15].rounded())] else { return }
     func level(_ value: Float) -> Float { value.isFinite ? max(0, min(1, value)) * strength : 0 }
@@ -486,8 +585,11 @@ private final class LiquidOrbRenderer: NSObject, MTKViewDelegate {
     private let ribbonCompositePipeline: MTLRenderPipelineState
     private var ribbonTexture: MTLTexture?
     private var lastFrameAt = CACurrentMediaTime()
-    private var motionPhase: CFTimeInterval = 0
+    private var motionPhase: CFTimeInterval = ${preview.motionPhase}
+    private var ringTime: CFTimeInterval = ${preview.ringTime ?? 0}
+    private var yaw: Float = ${preview.yaw}
     private var audio = LiquidOrbAudio()
+    private var impactResponse = PhysicalAudioResponse()
 
     func setAudio(_ audio: LiquidOrbAudio) {
         stateLock.lock()
@@ -616,7 +718,7 @@ private final class LiquidOrbRenderer: NSObject, MTKViewDelegate {
         let progress = Float(easedProgress)
 
         for index in 3..<displayedUniforms.count {
-            let isColorComponent = (index >= ${orbColorOffset} && index < 136 || index >= 144 && index < 152 || index >= 156 && index < 160)
+            let isColorComponent = (index >= ${orbColorOffset} && index < 136 || index >= 144 && index < 152 || index >= 156 && index < 160 || index >= 172 && index < 188)
                 && (index - ${orbColorOffset}) % 4 < 3
             displayedUniforms[index] = isColorComponent
                 ? orbMixSrgb(fromUniforms[index], targetUniforms[index], progress)
@@ -660,16 +762,23 @@ private final class LiquidOrbRenderer: NSObject, MTKViewDelegate {
         else { return }
 
         let now = CACurrentMediaTime()
+        let frameDelta = min(0.1, max(0, now - lastFrameAt))
         stateLock.lock()
         var uniforms = sampleTransition(at: now)
-        applyOrbAudio(&uniforms, audio)
+        let responseBands = impactResponse.sample(audio, dt: frameDelta, active: uniforms[163] > 0.5)
+        applyOrbAudio(&uniforms, responseBands)
         stateLock.unlock()
-        let frameDelta = min(0.1, max(0, now - lastFrameAt))
         lastFrameAt = now
+        if ${configuration.shared.autoRotate} {
+            yaw = (yaw + Float(frameDelta) * ${configuration.shared.rotationSpeed}).truncatingRemainder(dividingBy: .pi * 2)
+        }
+        uniforms[138] = yaw
         motionPhase += frameDelta * CFTimeInterval(max(uniforms[3], 0))
         uniforms[0] = Float(view.drawableSize.width)
         uniforms[1] = Float(view.drawableSize.height)
         uniforms[2] = Float(motionPhase / CFTimeInterval(max(uniforms[3], 0.001)))
+        ringTime += frameDelta
+        uniforms[162] = Float(ringTime)
         let isParticleRibbon = round(uniforms[15]) == orbRibbonStyleIndex
         if isParticleRibbon {
             guard let ribbonTexture = ensureRibbonTexture(for: view) else { return }
@@ -771,6 +880,7 @@ public struct LiquidOrbView: View {
 
     public var body: some View {
         LiquidOrbSurface(state: state, audio: audio)
+            .scaleEffect(${preview.scale})
 ${configuration.shared.starsEnabled ? `            .background {
                 TimelineView(.animation(minimumInterval: 0.1)) { timeline in
                     Canvas { context, size in
